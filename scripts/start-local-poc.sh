@@ -63,6 +63,25 @@ detect_engine() {
   return 1
 }
 
+# Variables this script derives for the local POC. .env is written for Docker
+# Compose, where these carry container paths and 0.0.0.0; honouring them here
+# would feed relative paths to bind mounts and bind the POC beyond loopback.
+# APP_AUTH_TOKEN is skipped too: this script pins HOST to loopback, so the
+# browser unlock screen adds nothing. Compose still uses it, and must.
+poc_managed_vars=" APP_DATA_DIR AGENT_WORKSPACE_ROOT CODEX_HOME HOST RUNTIME_INSTANCE_ID APP_AUTH_TOKEN "
+
+# Load .env when present. Variables already set in the shell win, so
+# `ARK_API_KEY=key ARK_MODEL=ep-id npm run poc` still overrides the file.
+if [[ -f .env ]]; then
+  log "Loading configuration from .env."
+  while IFS='=' read -r key value || [[ -n "$key" ]]; do
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    [[ "$poc_managed_vars" == *" $key "* ]] && continue
+    [[ -n "${!key:-}" ]] && continue
+    export "$key=$value"
+  done < .env
+fi
+
 if [[ -z "${ARK_API_KEY:-}" || -z "${ARK_MODEL:-}" ]]; then
   log "ARK_API_KEY and ARK_MODEL are required."
   log "Example: ARK_API_KEY=key ARK_MODEL=ep-id ./scripts/start-local-poc.sh"
