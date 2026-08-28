@@ -42,7 +42,6 @@ baseline and the hackathon brief forbids rebuilding them:
 - `apps/server/src/codex-runner.ts` — **zero changes**
 - `apps/server/src/container-codex-runner.ts` — **zero changes**
 - `apps/server/src/workspace.ts` — **zero changes**
-- `apps/server/src/config.ts` — **zero changes**
 - `apps/web/src/App.tsx` — one insertion point only
 
 ### 1.4 Dependency policy
@@ -80,6 +79,11 @@ parses NDJSON from stdout.
 no promise to await. Completion is observed by polling `getRun(runId)` until `status` leaves
 `{"queued","running"}`. `agent-service.test.ts:76` uses exactly this pattern.
 
+**F7 — `RUNTIME_PROVIDER=mock` reports itself inaccurately in `/api/system`.**
+`agent-service.ts:228` branches only on `"container"`, so mock mode is described as
+"Codex CLI in application container". Cosmetic, dev-only, and not worth an edit to a
+baseline file we have committed to leaving alone.
+
 **F6 — `JsonStore` is a single-process, whole-file, serialized store.**
 `store.ts:39-50` clones, mutates, persists, then swaps. `store.ts:23` rejects any file whose
 `version !== 1`.
@@ -95,6 +99,7 @@ apps/server/src/
 ├── app.ts                        MODIFIED once (one register() call)     — then frozen
 ├── index.ts                      MODIFIED once (construct + inject)      — then frozen
 ├── runner-factory.ts             MODIFIED once (mock branch)             — then frozen
+├── config.ts                     MODIFIED once (RUNTIME_PROVIDER=mock)   — then frozen
 ├── mock-runner.ts                NEW  — deterministic runner for dev and tests
 └── session/                      NEW  — the entire middleware
     ├── types.ts                  Session, SessionEvent, Stage, artifacts, inputs
@@ -465,15 +470,20 @@ Five lines in the server, three in the web app. These all land in **one foundati
 day 1 (see `WORKSTREAMS.md`), after which the files are frozen.
 
 1. `apps/server/src/types.ts` — 2 fields on `Database`, 1 import.
-2. `apps/server/src/store.ts` — `emptyDatabase()` gains 2 arrays; `initialize()` spreads defaults.
-3. `apps/server/src/runner-factory.ts` — a `mock` branch.
-4. `apps/server/src/index.ts` — construct `SessionStore`, `SchemaRegistry`, `ArtifactBroker`,
+2. `apps/server/src/store.ts` — `emptyDatabase()` gains 2 arrays; `initialize()` spreads
+   defaults so a file written before the session tables existed still loads.
+3. `apps/server/src/config.ts` — `"mock"` added to the `RUNTIME_PROVIDER` enum.
+4. `apps/server/src/runner-factory.ts` — a `mock` branch returning `MockRunner`.
+5. `apps/server/src/index.ts` — construct `SessionStore`, `SchemaRegistry`, `ArtifactBroker`,
    `SessionCoordinator`; pass them to `createApp`.
-5. `apps/server/src/app.ts` — one `await app.register(sessionRoutes, { ... })` after the last
-   existing route.
-6. `apps/web/src/api.ts` — append a new `pipelineApi` export. **Do not edit the existing `api` object.**
-7. `apps/web/src/types.ts` — append session type mirrors at the end of the file.
-8. `apps/web/src/App.tsx` — one `useState`, one button in `header-actions`, one conditional mount.
+6. `apps/server/src/app.ts` — an optional third parameter `sessionDeps?: SessionRouteDeps`, and
+   a guarded `await app.register(sessionRoutes, sessionDeps)` after the last existing route. The
+   parameter is optional so the existing `app.test.ts` calls keep compiling unchanged.
+7. `apps/web/src/api.ts` — a new `pipelineApi` export appended at the end, fully populated with
+   all five routes so W5 never needs to reopen this file. **The existing `api` object is untouched.**
+8. `apps/web/src/types.ts` — session type mirrors appended at the end of the file.
+9. `apps/web/src/App.tsx` — one import, one `useState`, one button in `header-actions`, one
+   conditional mount. 16 added lines, zero deletions.
 
 ---
 

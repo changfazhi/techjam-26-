@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { AppConfig } from "./config.js";
 import { HttpError } from "./errors.js";
 import type { AgentService } from "./agent-service.js";
+import { sessionRoutes, type SessionRouteDeps } from "./session/routes.js";
 
 const agentIdParams = z.object({ id: z.string().uuid() });
 const runIdParams = z.object({ id: z.string().uuid() });
@@ -26,6 +27,7 @@ const messageBody = z.object({
 export async function createApp(
   config: AppConfig,
   service: AgentService,
+  sessionDeps?: SessionRouteDeps,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -127,6 +129,10 @@ export async function createApp(
     const { id } = runIdParams.parse(request.params);
     return { run: service.getRun(id) };
   });
+
+  if (sessionDeps) {
+    await app.register(sessionRoutes, sessionDeps);
+  }
 
   if (config.nodeEnv === "production") {
     const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));

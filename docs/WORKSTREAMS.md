@@ -47,10 +47,12 @@ It contains:
 2. `apps/server/src/types.ts` — `Database` gains `sessions` and `sessionEvents`.
 3. `apps/server/src/store.ts` — `emptyDatabase()` gains the two arrays; `initialize()` spreads
    defaults (`this.data = { ...emptyDatabase(), ...parsed }`).
+3b. `apps/server/src/config.ts` — `"mock"` added to the `RUNTIME_PROVIDER` enum.
 4. `apps/server/src/runner-factory.ts` — the `mock` branch.
 5. `apps/server/src/index.ts` — constructs the four new objects and passes them to `createApp`.
 6. `apps/server/src/app.ts` — one `await app.register(sessionRoutes, { ... })`.
-7. `apps/web/src/api.ts` — an empty `export const pipelineApi = {}` appended at the end.
+7. `apps/web/src/api.ts` — a `pipelineApi` export appended at the end, fully populated with
+   all five routes so W5 never reopens this file.
 8. `apps/web/src/types.ts` — session type mirrors appended at the end.
 9. `apps/web/src/App.tsx` — one `useState`, one button, one conditional mount of `PipelinePanel`.
 10. **Stubs for every module W2–W5 will write** — see below.

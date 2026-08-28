@@ -1,4 +1,12 @@
-import type { Agent, AgentRun, Message, SystemInfo } from "./types";
+import type {
+  Agent,
+  AgentRun,
+  CreateSessionInput,
+  Message,
+  Session,
+  SessionEvent,
+  SystemInfo,
+} from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -78,4 +86,31 @@ export const api = {
       },
     ),
   run: (id: string) => request<{ run: AgentRun }>("/api/runs/" + id),
+};
+
+// ---------------------------------------------------------------------------
+// Handoff Gate — pipeline API.
+// APPEND-ONLY. A separate export so it can never conflict with `api` above.
+// ---------------------------------------------------------------------------
+
+export const pipelineApi = {
+  create: (body: CreateSessionInput) =>
+    request<{ session: Session }>("/api/sessions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  list: () => request<{ sessions: Session[] }>("/api/sessions"),
+  get: (id: string) => request<{ session: Session }>("/api/sessions/" + id),
+  start: (id: string) =>
+    request<{ session: Session }>("/api/sessions/" + id + "/start", {
+      method: "POST",
+    }),
+  stop: (id: string) =>
+    request<{ session: Session }>("/api/sessions/" + id + "/stop", {
+      method: "POST",
+    }),
+  events: (id: string, afterSeq = 0) =>
+    request<{ events: SessionEvent[] }>(
+      "/api/sessions/" + id + "/events?after=" + afterSeq,
+    ),
 };

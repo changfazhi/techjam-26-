@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, setAuthToken } from "./api";
 import type { Agent, AgentRun, Message, SystemInfo } from "./types";
+import PipelinePanel from "./pipeline/PipelinePanel";
 
 const starterPrompts = [
   "Create a small TypeScript CLI that prints a weather summary from sample JSON.",
@@ -42,6 +43,7 @@ export default function App() {
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showPipeline, setShowPipeline] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [prompt, setPrompt] = useState("");
   const [activeRun, setActiveRun] = useState<AgentRun | null>(null);
@@ -405,6 +407,13 @@ export default function App() {
               <div className="header-actions">
                 <button
                   className="button button-ghost"
+                  onClick={() => setShowPipeline((value) => !value)}
+                  disabled={busy}
+                >
+                  Pipeline
+                </button>
+                <button
+                  className="button button-ghost"
                   onClick={() => setShowSettings((value) => !value)}
                   disabled={busy || selected.status === "busy"}
                 >
@@ -426,6 +435,13 @@ export default function App() {
                 </button>
               </div>
             </header>
+
+            {showPipeline && (
+              <PipelinePanel
+                agentId={selected.id}
+                onClose={() => setShowPipeline(false)}
+              />
+            )}
 
             {showSettings && (
               <form className="settings-panel" onSubmit={saveAgent}>
