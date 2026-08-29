@@ -180,7 +180,7 @@ git switch -c feat/runtime-ui      # W5
 
 | | Day 1 | Day 2 | Day 3 |
 |---|---|---|---|
-| **W1** | Foundation commit (§2). Then `SessionStore` + its tests. | Review PRs. Seed logic in the broker with W2. Keep `main` green. | README, architecture diagram export, `npm run check`, demo dry-run ops. |
+| **W1** | **Done** — foundation commit and `SessionStore` landed in `87bb86d`. Remaining: fill in the Owner column in §1, and **run the baseline acceptance test** (README §4) — nobody starts day 2 until it passes. | Review PRs. Seed logic in the broker with W2. Keep `main` green. | README, architecture diagram export, `npm run check`, demo dry-run ops. |
 | **W2** | Read the code. Write `runStage` against stubs. | Full stage loop, retry budget, timeout + cancel, broker deliver. Coordinator tests. | Real-runner run-through. Fix what the real Codex output breaks. |
 | **W3** | Route shapes + zod param validation against the coordinator stub. | All five routes wired to the real coordinator. Route tests incl. double-start 409. | Error handling polish. `curl` script for the demo. |
 | **W4** | All three schemas + redaction, fully tested. **No agents needed.** | `prompt.ts` assembly: instruction + `describe()` + digest + violations. | Tune prompts against real Codex output — this is where day 3 goes. |
