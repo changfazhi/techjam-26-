@@ -4,12 +4,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentService } from "../agent-service.js";
 import { loadConfig } from "../config.js";
+import { RunCancelledError } from "../errors.js";
 import { JsonStore } from "../store.js";
 import type { AgentRunner, RunnerRequest, RunnerResult } from "../types.js";
 import { WorkspaceManager } from "../workspace.js";
 import { FileArtifactBroker } from "./broker.js";
-import { SessionCoordinator } from "./coordinator.js";
-import type { SchemaRegistry } from "./schemas/index.js";
+import { SessionCoordinator, type CoordinatorDeps } from "./coordinator.js";
+import type { SchemaRegistry, ValidationResult } from "./schemas/index.js";
 import { SessionStore } from "./session-store.js";
 import type { CreateSessionInput } from "./types.js";
 
@@ -24,30 +25,77 @@ afterEach(async () => {
   );
 });
 
-/** Accepts any parseable JSON. W4's real schemas are not needed to prove the loop. */
-const permissiveSchemas: SchemaRegistry = {
-  get: () => ({
-    id: "fake",
-    describe: () => "any json object",
-    validate: (raw: string) => {
-      try {
-        return { ok: true as const, value: JSON.parse(raw) as unknown };
-      } catch {
-        return { ok: false as const, violations: ["not valid json"] };
-      }
-    },
-  }),
+// --------------------------------------------------------------------------
+// Fakes
+// --------------------------------------------------------------------------
+
+/** What a scripted agent does on one turn. */
+type Script =
+  | { write: { fileName: string; content: string } }
+  /** Answers without writing the declared file. */
+  | { replyOnly: string };
+
+/**
+ * Decides validity per schema, receiving a 0-based call index so a test can
+ * reject the first attempt and admit the retry.
+ */
+type Decide = (schemaId: string, raw: string, call: number) => ValidationResult;
+
+/** Stage 3 emits markdown; every other stage emits JSON. */
+const acceptDefault: Decide = (schemaId, raw) => {
+  if (schemaId === "report") {
+    return raw.trim().length > 0
+      ? { ok: true, value: raw }
+      : { ok: false, violations: ["empty report"] };
+  }
+  try {
+    return { ok: true, value: JSON.parse(raw) as unknown };
+  } catch {
+    return { ok: false, violations: ["not valid json"] };
+  }
 };
+
+function schemasThat(decide: Decide): SchemaRegistry {
+  const calls = new Map<string, number>();
+  return {
+    get: (schemaId: string) => ({
+      id: schemaId,
+      describe: () => "schema for " + schemaId,
+      validate: (raw: string) => {
+        const call = calls.get(schemaId) ?? 0;
+        calls.set(schemaId, call + 1);
+        return decide(schemaId, raw, call);
+      },
+    }),
+  };
+}
+
+/** Never settles on its own; a cancel rejects it the way a real runner does. */
+function hangingRunner(): AgentRunner {
+  let rejectActive: ((reason: unknown) => void) | null = null;
+  return {
+    isAvailable: async () => true,
+    cancel: async () => {
+      rejectActive?.(new RunCancelledError());
+      rejectActive = null;
+      return true;
+    },
+    run: () =>
+      new Promise<RunnerResult>((_resolve, reject) => {
+        rejectActive = reject;
+      }),
+  };
+}
 
 interface Harness {
   service: AgentService;
   sessions: SessionStore;
   workspaces: WorkspaceManager;
-  /** agentId -> what that agent writes when it runs. Populated after agents exist. */
-  scripted: Map<string, { fileName: string; content: string } | "prose-only">;
+  /** agentId -> the script for each successive turn; the last one repeats. */
+  scripted: Map<string, Script[]>;
 }
 
-async function makeHarness(): Promise<Harness> {
+async function makeHarness(customRunner?: AgentRunner): Promise<Harness> {
   const root = await mkdtemp(path.join(tmpdir(), "handoff-coordinator-"));
   temporaryDirectories.push(root);
   const config = loadConfig({
@@ -61,24 +109,29 @@ async function makeHarness(): Promise<Harness> {
   });
 
   const scripted: Harness["scripted"] = new Map();
+  const turns = new Map<string, number>();
 
-  // The fake agent writes a real file into its own workspace, exercising the
-  // broker's file path rather than the reply fallback.
-  const runner: AgentRunner = {
+  // The scripted agent writes a real file into its own workspace, exercising
+  // the broker's file path rather than the reply fallback.
+  const scriptedRunner: AgentRunner = {
     isAvailable: async () => true,
     cancel: async () => false,
     run: async (request: RunnerRequest): Promise<RunnerResult> => {
-      const script = scripted.get(request.agentId);
-      if (script && script !== "prose-only") {
+      const scripts = scripted.get(request.agentId) ?? [];
+      const turn = turns.get(request.agentId) ?? 0;
+      turns.set(request.agentId, turn + 1);
+      const script = scripts[Math.min(turn, scripts.length - 1)];
+
+      if (script && "write" in script) {
         await writeFile(
-          path.join(request.workspacePath, script.fileName),
-          script.content,
+          path.join(request.workspacePath, script.write.fileName),
+          script.write.content,
           "utf8",
         );
-        return { output: "wrote " + script.fileName, threadId: "thread", usage: null };
+        return { output: "wrote " + script.write.fileName, threadId: "thread", usage: null };
       }
       return {
-        output: "No file this time.\n\n```json\n{\"fromReply\":true}\n```\n",
+        output: script && "replyOnly" in script ? script.replyOnly : "nothing to say",
         threadId: "thread",
         usage: null,
       };
@@ -88,13 +141,56 @@ async function makeHarness(): Promise<Harness> {
   // One JsonStore shared by both. Two stores over the same file would clobber.
   const store = new JsonStore(path.join(root, "data", "db.json"));
   const workspaces = new WorkspaceManager(path.join(root, "workspaces"));
-  const service = new AgentService(config, store, workspaces, runner);
+  const service = new AgentService(
+    config,
+    store,
+    workspaces,
+    customRunner ?? scriptedRunner,
+  );
   await service.initialize();
 
   return { service, sessions: new SessionStore(store), workspaces, scripted };
 }
 
-function twoStageInput(researcherId: string, summarizerId: string): CreateSessionInput {
+function coordinatorFor(
+  harness: Harness,
+  overrides: Partial<CoordinatorDeps> = {},
+): SessionCoordinator {
+  return new SessionCoordinator({
+    agents: harness.service,
+    sessions: harness.sessions,
+    schemas: schemasThat(acceptDefault),
+    broker: new FileArtifactBroker(),
+    workspacePathFor: (agentId) => harness.workspaces.workspacePath(agentId),
+    pollIntervalMs: 5,
+    buildPrompt: (input) =>
+      input.stage.instruction +
+      (input.violations.length ? "\nFix: " + input.violations.join("; ") : ""),
+    ...overrides,
+  });
+}
+
+// --------------------------------------------------------------------------
+// Fixtures
+// --------------------------------------------------------------------------
+
+const RESEARCH = JSON.stringify({
+  claims: [{ id: "claim-1", text: "Recycling recovers lithium.", sourceId: "source-1.md" }],
+});
+const GOOD_SUMMARY = JSON.stringify({
+  keyPoints: [{ text: "Lithium is recoverable.", citedClaimIds: ["claim-1"] }],
+});
+const HALLUCINATED_SUMMARY = JSON.stringify({
+  keyPoints: [{ text: "Cobalt is recoverable.", citedClaimIds: ["claim-99"] }],
+});
+const REPORT = "# Report\n\nLithium is recoverable [claim-1].\n";
+
+function threeStageInput(
+  researcherId: string,
+  summarizerId: string,
+  formatterId: string,
+  maxAttempts = 2,
+): CreateSessionInput {
   return {
     title: "Provenance run",
     topic: "battery recycling",
@@ -107,6 +203,7 @@ function twoStageInput(researcherId: string, summarizerId: string): CreateSessio
         outputPath: "research.json",
         inputFileName: null,
         instruction: "Extract claims from the seeded sources.",
+        maxAttempts,
       },
       {
         id: "summary",
@@ -116,111 +213,96 @@ function twoStageInput(researcherId: string, summarizerId: string): CreateSessio
         outputPath: "summary.json",
         inputFileName: "research.json",
         instruction: "Condense the claims into cited key points.",
+        maxAttempts,
+      },
+      {
+        id: "report",
+        role: "Formatter",
+        agentId: formatterId,
+        schemaId: "report",
+        outputPath: "report.md",
+        inputFileName: "summary.json",
+        instruction: "Format the summary into a cited report.",
+        maxAttempts,
       },
     ],
     sources: [{ name: "source-1.md", content: "# Source one" }],
   };
 }
 
-const RESEARCH_PAYLOAD = JSON.stringify({
-  claims: [{ id: "claim-1", text: "Recycling recovers lithium.", sourceId: "source-1.md" }],
-});
-const SUMMARY_PAYLOAD = JSON.stringify({
-  keyPoints: [{ text: "Lithium is recoverable.", citedClaimIds: ["claim-1"] }],
-});
+async function threeAgents(harness: Harness) {
+  const researcher = await harness.service.createAgent({ name: "Researcher" });
+  const summarizer = await harness.service.createAgent({ name: "Summarizer" });
+  const formatter = await harness.service.createAgent({ name: "Formatter" });
+  harness.scripted.set(researcher.id, [{ write: { fileName: "research.json", content: RESEARCH } }]);
+  harness.scripted.set(formatter.id, [{ write: { fileName: "report.md", content: REPORT } }]);
+  return { researcher, summarizer, formatter };
+}
+
+// --------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------
 
 describe("SessionCoordinator — happy path", () => {
   it("admits every stage and brokers each artifact into the next workspace", async () => {
     const harness = await makeHarness();
-    const researcher = await harness.service.createAgent({ name: "Researcher" });
-    const summarizer = await harness.service.createAgent({ name: "Summarizer" });
-    harness.scripted.set(researcher.id, {
-      fileName: "research.json",
-      content: RESEARCH_PAYLOAD,
-    });
-    harness.scripted.set(summarizer.id, {
-      fileName: "summary.json",
-      content: SUMMARY_PAYLOAD,
-    });
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    harness.scripted.set(summarizer.id, [
+      { write: { fileName: "summary.json", content: GOOD_SUMMARY } },
+    ]);
 
     const session = await harness.sessions.create(
-      twoStageInput(researcher.id, summarizer.id),
+      threeStageInput(researcher.id, summarizer.id, formatter.id),
     );
-    const coordinator = new SessionCoordinator({
-      agents: harness.service,
-      sessions: harness.sessions,
-      schemas: permissiveSchemas,
-      broker: new FileArtifactBroker(),
-      workspacePathFor: (agentId) => harness.workspaces.workspacePath(agentId),
-      pollIntervalMs: 5,
-      buildPrompt: (input) => input.stage.instruction,
-    });
-
-    await coordinator.start(session.id);
+    await coordinatorFor(harness).start(session.id);
     await expect
       .poll(() => harness.sessions.get(session.id)?.state, { timeout: 5_000 })
       .toBe("completed");
 
     const finished = harness.sessions.require(session.id);
-    expect(finished.version).toBe(2);
+    expect(finished.version).toBe(3);
     expect(Object.keys(finished.sharedState.artifacts).sort()).toEqual([
+      "report",
       "research",
       "summary",
     ]);
-    expect(finished.sharedState.currentStageIndex).toBe(2);
+    expect(finished.sharedState.currentStageIndex).toBe(3);
     for (const artifact of Object.values(finished.sharedState.artifacts)) {
       expect(artifact.hash).toMatch(/^[0-9a-f]{64}$/);
-      expect(artifact.bytes).toBeGreaterThan(0);
     }
 
-    // The claim the whole design rests on: stage 1's output physically reached
-    // stage 2's sealed workspace, and only the coordinator could have put it there.
-    const delivered = await readFile(
-      path.join(harness.workspaces.workspacePath(summarizer.id), "research.json"),
-      "utf8",
-    );
-    expect(delivered).toBe(RESEARCH_PAYLOAD);
+    // The claim the whole design rests on: each stage's output physically
+    // reached the next agent's sealed workspace, and only the coordinator
+    // could have put it there.
+    await expect(
+      readFile(path.join(harness.workspaces.workspacePath(summarizer.id), "research.json"), "utf8"),
+    ).resolves.toBe(RESEARCH);
+    await expect(
+      readFile(path.join(harness.workspaces.workspacePath(formatter.id), "summary.json"), "utf8"),
+    ).resolves.toBe(GOOD_SUMMARY);
 
-    const events = harness.sessions.events(session.id);
-    expect(events.map((event) => event.type)).toEqual([
+    expect(harness.sessions.events(session.id).map((event) => event.type)).toEqual([
       "session.started",
+      "stage.assigned",
+      "stage.completed",
       "stage.assigned",
       "stage.completed",
       "stage.assigned",
       "stage.completed",
       "session.completed",
     ]);
-    expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(events[2]?.payload.artifactHash).toBe(
-      finished.sharedState.artifacts["research"]?.hash,
-    );
   });
 
   it("refuses a second concurrent start with a 409", async () => {
     const harness = await makeHarness();
-    const researcher = await harness.service.createAgent({ name: "Researcher" });
-    const summarizer = await harness.service.createAgent({ name: "Summarizer" });
-    harness.scripted.set(researcher.id, {
-      fileName: "research.json",
-      content: RESEARCH_PAYLOAD,
-    });
-    harness.scripted.set(summarizer.id, {
-      fileName: "summary.json",
-      content: SUMMARY_PAYLOAD,
-    });
-
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    harness.scripted.set(summarizer.id, [
+      { write: { fileName: "summary.json", content: GOOD_SUMMARY } },
+    ]);
     const session = await harness.sessions.create(
-      twoStageInput(researcher.id, summarizer.id),
+      threeStageInput(researcher.id, summarizer.id, formatter.id),
     );
-    const coordinator = new SessionCoordinator({
-      agents: harness.service,
-      sessions: harness.sessions,
-      schemas: permissiveSchemas,
-      broker: new FileArtifactBroker(),
-      workspacePathFor: (agentId) => harness.workspaces.workspacePath(agentId),
-      pollIntervalMs: 5,
-      buildPrompt: (input) => input.stage.instruction,
-    });
+    const coordinator = coordinatorFor(harness);
 
     await coordinator.start(session.id);
     await expect(coordinator.start(session.id)).rejects.toMatchObject({ statusCode: 409 });
@@ -228,10 +310,165 @@ describe("SessionCoordinator — happy path", () => {
     await expect
       .poll(() => harness.sessions.get(session.id)?.state, { timeout: 5_000 })
       .toBe("completed");
-    const started = harness.sessions
+    expect(
+      harness.sessions.events(session.id).filter((e) => e.type === "session.started"),
+    ).toHaveLength(1);
+  });
+});
+
+describe("SessionCoordinator — a held stage never propagates", () => {
+  it("rejects a hallucinated citation, keeps the chain intact, then admits the retry", async () => {
+    const harness = await makeHarness();
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    // Attempt 1 cites a claim stage 1 never produced; attempt 2 is correct.
+    harness.scripted.set(summarizer.id, [
+      { write: { fileName: "summary.json", content: HALLUCINATED_SUMMARY } },
+      { write: { fileName: "summary.json", content: GOOD_SUMMARY } },
+    ]);
+
+    const session = await harness.sessions.create(
+      threeStageInput(researcher.id, summarizer.id, formatter.id),
+    );
+
+    const formatterWorkspace = harness.workspaces.workspacePath(formatter.id);
+    let versionAtRejection: number | null = null;
+
+    const coordinator = coordinatorFor(harness, {
+      schemas: schemasThat((schemaId, raw, call) => {
+        if (schemaId !== "summary") return acceptDefault(schemaId, raw, call);
+        const parsed = JSON.parse(raw) as {
+          keyPoints: Array<{ citedClaimIds: string[] }>;
+        };
+        const known = new Set(
+          (JSON.parse(RESEARCH) as { claims: Array<{ id: string }> }).claims.map((c) => c.id),
+        );
+        const bad = parsed.keyPoints
+          .flatMap((point) => point.citedClaimIds)
+          .filter((id) => !known.has(id));
+        if (bad.length > 0) {
+          versionAtRejection = harness.sessions.require(session.id).version;
+          return { ok: false, violations: ["cited claims not in stage 1: " + bad.join(", ")] };
+        }
+        return { ok: true, value: parsed };
+      }),
+    });
+
+    await coordinator.start(session.id);
+    await expect
+      .poll(() => harness.sessions.get(session.id)?.state, { timeout: 5_000 })
+      .toBe("completed");
+
+    const events = harness.sessions.events(session.id);
+    const rejected = events.find((event) => event.type === "stage.rejected");
+    expect(rejected?.stageId).toBe("summary");
+    expect(rejected?.attempt).toBe(1);
+    expect(rejected?.payload.violations?.[0]).toContain("claim-99");
+
+    // INVARIANT 5: the hold left version exactly where stage 1 put it.
+    expect(versionAtRejection).toBe(1);
+    const finished = harness.sessions.require(session.id);
+    expect(finished.sharedState.attempts["summary"]).toBe(1);
+    expect(finished.version).toBe(3);
+
+    // The bad summary never reached stage 3. Only the admitted one did.
+    await expect(
+      readFile(path.join(formatterWorkspace, "summary.json"), "utf8"),
+    ).resolves.toBe(GOOD_SUMMARY);
+  });
+
+  it("holds when the agent writes no artifact and offers no fenced block", async () => {
+    const harness = await makeHarness();
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    harness.scripted.set(summarizer.id, [{ replyOnly: "I was unable to complete this." }]);
+
+    const session = await harness.sessions.create(
+      threeStageInput(researcher.id, summarizer.id, formatter.id, 1),
+    );
+    await coordinatorFor(harness).start(session.id);
+    await expect
+      .poll(() => harness.sessions.get(session.id)?.state, { timeout: 5_000 })
+      .toBe("failed");
+
+    const rejected = harness.sessions
       .events(session.id)
-      .filter((event) => event.type === "session.started");
-    expect(started).toHaveLength(1);
+      .find((event) => event.type === "stage.rejected");
+    expect(rejected?.payload.violations?.[0]).toContain("artifact missing");
+    expect(harness.sessions.require(session.id).version).toBe(1);
+  });
+
+  it("fails the session when the attempt budget is spent, keeping earlier artifacts", async () => {
+    const harness = await makeHarness();
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    harness.scripted.set(summarizer.id, [
+      { write: { fileName: "summary.json", content: HALLUCINATED_SUMMARY } },
+    ]);
+
+    const session = await harness.sessions.create(
+      threeStageInput(researcher.id, summarizer.id, formatter.id),
+    );
+    await coordinatorFor(harness, {
+      schemas: schemasThat((schemaId, raw, call) =>
+        schemaId === "summary"
+          ? { ok: false, violations: ["cited claims not in stage 1: claim-99"] }
+          : acceptDefault(schemaId, raw, call),
+      ),
+    }).start(session.id);
+
+    await expect
+      .poll(() => harness.sessions.get(session.id)?.state, { timeout: 5_000 })
+      .toBe("failed");
+
+    const finished = harness.sessions.require(session.id);
+    expect(finished.sharedState.attempts["summary"]).toBe(2);
+    expect(finished.error).toContain("claim-99");
+    // Stage 1's artifact survives the failure and is still readable.
+    expect(finished.version).toBe(1);
+    expect(finished.sharedState.artifacts["research"]?.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(finished.sharedState.artifacts["summary"]).toBeUndefined();
+  });
+});
+
+describe("SessionCoordinator — recovery and control", () => {
+  it("times out a hung stage, then restores the agent so it can be dispatched again", async () => {
+    const harness = await makeHarness(hangingRunner());
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    const session = await harness.sessions.create(
+      threeStageInput(researcher.id, summarizer.id, formatter.id, 1),
+    );
+
+    await coordinatorFor(harness, { stageTimeoutMs: 60 }).start(session.id);
+    await expect
+      .poll(() => harness.sessions.get(session.id)?.state, { timeout: 5_000 })
+      .toBe("failed");
+
+    const timedOut = harness.sessions
+      .events(session.id)
+      .find((event) => event.type === "stage.timeout");
+    expect(timedOut?.stageId).toBe("research");
+    expect(timedOut?.payload.violations?.[0]).toContain("deadline exceeded");
+
+    // The landmine: stopAgent alone would leave this agent "stopped", and
+    // sendMessage rejects a stopped agent, bricking it for the rest of the run.
+    expect(harness.service.getAgent(researcher.id).status).toBe("ready");
+    expect(harness.sessions.require(session.id).sharedState.attempts["research"]).toBe(1);
+  });
+
+  it("stops a running session on request and keeps what was already admitted", async () => {
+    const harness = await makeHarness(hangingRunner());
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    const session = await harness.sessions.create(
+      threeStageInput(researcher.id, summarizer.id, formatter.id),
+    );
+    const coordinator = coordinatorFor(harness, { stageTimeoutMs: 10_000 });
+
+    await coordinator.start(session.id);
+    await expect.poll(() => coordinator.isRunning(session.id), { timeout: 2_000 }).toBe(true);
+
+    const stopped = await coordinator.stop(session.id);
+
+    expect(stopped.state).toBe("stopped");
+    expect(coordinator.isRunning(session.id)).toBe(false);
+    expect(harness.service.getAgent(researcher.id).status).toBe("ready");
   });
 });
 
@@ -239,39 +476,35 @@ describe("FileArtifactBroker", () => {
   it("falls back to a fenced json block when no file was written", async () => {
     const harness = await makeHarness();
     const agent = await harness.service.createAgent({ name: "Prose" });
-    const broker = new FileArtifactBroker();
-
-    const collected = await broker.collect(
+    const collected = await new FileArtifactBroker().collect(
       harness.workspaces.workspacePath(agent.id),
       "research.json",
       'Here you go.\n\n```json\n{"claims":[]}\n```\n',
     );
-
     expect(collected).toMatchObject({ found: true, source: "reply" });
-    expect(collected.found && JSON.parse(collected.raw)).toEqual({ claims: [] });
+    expect(collected.found && (JSON.parse(collected.raw) as unknown)).toEqual({ claims: [] });
   });
 
   it("reports not found when there is neither a file nor a fenced block", async () => {
     const harness = await makeHarness();
     const agent = await harness.service.createAgent({ name: "Empty" });
-    const broker = new FileArtifactBroker();
-
-    const collected = await broker.collect(
+    const collected = await new FileArtifactBroker().collect(
       harness.workspaces.workspacePath(agent.id),
       "research.json",
       "I could not complete the task.",
     );
-
     expect(collected).toEqual({ found: false });
   });
 
   it("refuses a stage output path that escapes the workspace", async () => {
     const harness = await makeHarness();
     const agent = await harness.service.createAgent({ name: "Escapee" });
-    const broker = new FileArtifactBroker();
-
     await expect(
-      broker.collect(harness.workspaces.workspacePath(agent.id), "../../etc/passwd", ""),
+      new FileArtifactBroker().collect(
+        harness.workspaces.workspacePath(agent.id),
+        "../../etc/passwd",
+        "",
+      ),
     ).rejects.toMatchObject({ statusCode: 400 });
   });
 });

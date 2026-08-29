@@ -2,10 +2,7 @@
  * The stage loop: dispatch, validate, admit or hold, retry within budget.
  * Owned by W2 (Coordinator). See docs/BLUEPRINT.md section 6.
  *
- * Step 1 implements the happy path. Retries, timeouts, and stop() are step 2 and
- * are marked below.
- *
- * Invariants this module must uphold:
+ * Invariants this module upholds:
  *   5. On a HOLD, sharedState and version are unchanged; only attempts[] moves.
  *   6. version increases by exactly 1 per admitted artifact.
  *   7. A stage runs only once its predecessor has an entry in sharedState.artifacts.
@@ -23,7 +20,7 @@ import type { SchemaRegistry } from "./schemas/index.js";
 import type { SessionStore } from "./session-store.js";
 import type { Artifact, Session, SessionEventType, Stage } from "./types.js";
 
-type Outcome = "ADMIT" | "HOLD";
+type StageResult = { outcome: "ADMIT" } | { outcome: "HOLD"; violations: string[] };
 
 const DEFAULT_POLL_INTERVAL_MS = 500;
 const DEFAULT_STAGE_TIMEOUT_MS = 90_000;
@@ -40,13 +37,15 @@ export interface CoordinatorDeps {
   stageTimeoutMs?: number | undefined;
   /**
    * Prompt assembly. Defaults to W4's buildStagePrompt; injectable so the
-   * coordinator's tests do not depend on W4's implementation landing first.
+   * coordinator and its tests do not depend on W4's implementation landing first.
    */
   buildPrompt?: ((input: PromptInput) => string) | undefined;
 }
 
 export class SessionCoordinator {
-  private readonly running = new Set<string>();
+  /** sessionId -> a promise that settles when its drive loop finishes. */
+  private readonly running = new Map<string, Promise<void>>();
+  private readonly stopRequests = new Set<string>();
 
   constructor(private readonly deps: CoordinatorDeps) {}
 
@@ -60,7 +59,16 @@ export class SessionCoordinator {
     if (this.running.has(sessionId)) {
       throw new HttpError(409, "This session is already running");
     }
-    this.running.add(sessionId);
+
+    // Reserve synchronously, before the first await, so two concurrent starts
+    // cannot both pass the guard above.
+    let release!: () => void;
+    this.running.set(
+      sessionId,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
 
     const session = await this.deps.sessions.update(sessionId, (current) => {
       current.state = "running";
@@ -80,31 +88,81 @@ export class SessionCoordinator {
       })
       .finally(() => {
         this.running.delete(sessionId);
+        release();
       });
 
     return session;
   }
 
-  /** Cancels the in-flight run and parks the session as "stopped". */
-  async stop(_sessionId: string): Promise<Session> {
-    throw new Error("not implemented: W2 step 2 (coordinator.stop)");
+  /**
+   * Administrative stop. Cancels the in-flight run, waits for the drive loop to
+   * notice, and parks the session. Artifacts admitted so far are kept.
+   */
+  async stop(sessionId: string): Promise<Session> {
+    const session = this.deps.sessions.require(sessionId);
+    this.stopRequests.add(sessionId);
+    try {
+      // Settle whatever run is in flight so the poll loop returns promptly.
+      const inFlightStage = session.stages[session.sharedState.currentStageIndex];
+      if (inFlightStage) {
+        await this.recoverAgent(inFlightStage.agentId);
+      }
+      const inFlight = this.running.get(sessionId);
+      if (inFlight) {
+        await inFlight;
+      }
+    } finally {
+      this.stopRequests.delete(sessionId);
+    }
+
+    return this.deps.sessions.update(sessionId, (current) => {
+      if (current.state === "running" || current.state === "idle") {
+        current.state = "stopped";
+      }
+    });
   }
 
-  /** Walks the stage list. One attempt per stage in step 1. */
+  /** Walks the stage list, retrying each stage within its own budget. */
   private async drive(sessionId: string): Promise<void> {
     const stageCount = this.deps.sessions.require(sessionId).stages.length;
 
     for (let stageIndex = 0; stageIndex < stageCount; stageIndex += 1) {
-      const outcome = await this.runStage(sessionId, stageIndex, 1);
-      if (outcome !== "ADMIT") {
+      if (this.stopRequests.has(sessionId)) return;
+
+      const stage = this.deps.sessions.require(sessionId).stages[stageIndex];
+      if (!stage) {
+        throw new Error("No stage at index " + String(stageIndex));
+      }
+
+      let admitted = false;
+      let violations: string[] = [];
+      for (let attempt = 1; attempt <= stage.maxAttempts; attempt += 1) {
+        if (this.stopRequests.has(sessionId)) return;
+        const result = await this.runStage(sessionId, stageIndex, attempt, violations);
+        if (result.outcome === "ADMIT") {
+          admitted = true;
+          break;
+        }
+        violations = result.violations;
+      }
+
+      if (this.stopRequests.has(sessionId)) return;
+      if (!admitted) {
         await this.deps.sessions.update(sessionId, (current) => {
           current.state = "failed";
-          current.error = "Stage " + String(stageIndex) + " was not admitted";
+          current.error =
+            "Stage " +
+            stage.id +
+            " was not admitted in " +
+            String(stage.maxAttempts) +
+            " attempts: " +
+            violations.join("; ");
         });
         return;
       }
     }
 
+    if (this.stopRequests.has(sessionId)) return;
     await this.deps.sessions.update(sessionId, (current) => {
       current.state = "completed";
     });
@@ -115,7 +173,8 @@ export class SessionCoordinator {
     sessionId: string,
     stageIndex: number,
     attempt: number,
-  ): Promise<Outcome> {
+    priorViolations: string[],
+  ): Promise<StageResult> {
     const session = this.deps.sessions.require(sessionId);
     const stage = session.stages[stageIndex];
     if (!stage) {
@@ -123,6 +182,7 @@ export class SessionCoordinator {
     }
     const schema = this.deps.schemas.get(stage.schemaId);
     const workspacePath = this.deps.workspacePathFor(stage.agentId);
+    const timeoutMs = this.deps.stageTimeoutMs ?? DEFAULT_STAGE_TIMEOUT_MS;
     const startedAt = Date.now();
 
     await this.emit(sessionId, "stage.assigned", {}, stage, attempt, null);
@@ -133,27 +193,38 @@ export class SessionCoordinator {
       schemaDescription: schema.describe(),
       priorEvents: this.deps.sessions.events(sessionId),
       inputContents,
-      violations: [],
+      // What the previous attempt got wrong, so the agent can fix it.
+      violations: priorViolations,
     });
 
-    const { run } = await this.deps.agents.sendMessage(stage.agentId, prompt);
-    const finished = await this.awaitRun(
-      run.id,
-      startedAt + (this.deps.stageTimeoutMs ?? DEFAULT_STAGE_TIMEOUT_MS),
-    );
+    // A dispatch can legitimately fail — an operator stopped the agent, or a
+    // stop() landed in the window before this call. That is a held stage, not a
+    // reason to take the whole session down.
+    let run: AgentRun;
+    try {
+      ({ run } = await this.deps.agents.sendMessage(stage.agentId, prompt));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return this.hold(sessionId, stage, attempt, null, ["dispatch failed: " + message]);
+    }
 
-    // Step 2 replaces this branch with stopAgent + startAgent recovery and a
-    // stage.timeout event. agent-service.ts:190 rejects a stopped agent, so the
-    // restart is mandatory there.
+    const finished = await this.awaitRun(run.id, startedAt + timeoutMs);
+
     if (finished === "TIMEOUT") {
-      await this.hold(sessionId, stage, attempt, run.id, ["stage deadline exceeded"]);
-      return "HOLD";
+      await this.recoverAgent(stage.agentId);
+      return this.hold(
+        sessionId,
+        stage,
+        attempt,
+        run.id,
+        ["stage deadline exceeded after " + String(timeoutMs) + " ms"],
+        "stage.timeout",
+      );
     }
     if (finished.status !== "completed") {
-      await this.hold(sessionId, stage, attempt, run.id, [
+      return this.hold(sessionId, stage, attempt, run.id, [
         finished.error ?? "run " + finished.status,
       ]);
-      return "HOLD";
     }
 
     const collected = await this.deps.broker.collect(
@@ -162,10 +233,9 @@ export class SessionCoordinator {
       finished.output ?? "",
     );
     if (!collected.found) {
-      await this.hold(sessionId, stage, attempt, run.id, [
+      return this.hold(sessionId, stage, attempt, run.id, [
         "artifact missing: expected " + stage.outputPath,
       ]);
-      return "HOLD";
     }
 
     const validation = schema.validate(collected.raw, {
@@ -173,8 +243,7 @@ export class SessionCoordinator {
       sourceManifest: session.sourceManifest,
     });
     if (!validation.ok) {
-      await this.hold(sessionId, stage, attempt, run.id, validation.violations);
-      return "HOLD";
+      return this.hold(sessionId, stage, attempt, run.id, validation.violations);
     }
 
     const artifact = await this.admitArtifact(
@@ -199,7 +268,7 @@ export class SessionCoordinator {
       attempt,
       run.id,
     );
-    return "ADMIT";
+    return { outcome: "ADMIT" };
   }
 
   /**
@@ -222,6 +291,23 @@ export class SessionCoordinator {
       this.deps.workspacePathFor(nextStage.agentId),
       nextStage.inputFileName,
     );
+  }
+
+  /**
+   * Cancel whatever the agent is doing and put it back in service.
+   *
+   * stopAgent leaves the agent "stopped" (agent-service.ts:123) and sendMessage
+   * then rejects a stopped agent with a 409 (agent-service.ts:190). Without the
+   * restart, one timeout would make that agent unusable for the rest of the run.
+   */
+  private async recoverAgent(agentId: string): Promise<void> {
+    try {
+      await this.deps.agents.stopAgent(agentId);
+      await this.deps.agents.startAgent(agentId);
+    } catch {
+      // A failed recovery must not take the session down with it; the next
+      // dispatch to this agent will surface the problem as a hold.
+    }
   }
 
   /** Poll getRun until it settles or the deadline passes. */
@@ -262,15 +348,24 @@ export class SessionCoordinator {
     return result;
   }
 
-  /** INVARIANT 5: records the refusal without touching the artifact chain. */
+  /**
+   * Record a refusal. INVARIANT 5: attempts is the only sharedState field a hold
+   * may touch, so a held artifact can never reach the next workspace.
+   */
   private async hold(
     sessionId: string,
     stage: Stage,
     attempt: number,
-    runId: string,
+    runId: string | null,
     violations: string[],
-  ): Promise<void> {
-    await this.emit(sessionId, "stage.rejected", { violations }, stage, attempt, runId);
+    type: "stage.rejected" | "stage.timeout" = "stage.rejected",
+  ): Promise<StageResult> {
+    await this.deps.sessions.update(sessionId, (current) => {
+      current.sharedState.attempts[stage.id] =
+        (current.sharedState.attempts[stage.id] ?? 0) + 1;
+    });
+    await this.emit(sessionId, type, { violations }, stage, attempt, runId);
+    return { outcome: "HOLD", violations };
   }
 
   private async emit(
