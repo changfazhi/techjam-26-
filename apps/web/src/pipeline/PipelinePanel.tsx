@@ -26,7 +26,10 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
       try {
         const { sessions } = await pipelineApi.list();
         const match = sessions.filter((item) => item.stages.some((stage) => stage.agentId === agentId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-        if (!match) return;
+        if (!match) {
+          if (active) setNote("No pipeline session found for agent " + agentId + ".");
+          return;
+        }
         const [{ session: current }, { events: currentEvents }] = await Promise.all([pipelineApi.get(match.id), pipelineApi.events(match.id)]);
         if (!active) return;
         afterSeq.current = currentEvents.at(-1)?.seq ?? 0;
