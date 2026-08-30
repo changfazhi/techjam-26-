@@ -311,6 +311,9 @@ export type CollectResult =
   | { found: true; raw: string; source: "file" | "reply" }
   | { found: false };
 
+/** Record an artifact without delivering it — used for the final stage. */
+export function hashArtifact(raw: string, stageId: string, sourcePath: string): Artifact;
+
 export interface ArtifactBroker {
   /** Read `stage.outputPath` from the agent workspace; fall back to a fenced JSON block. */
   collect(workspacePath: string, outputPath: string, reply: string): Promise<CollectResult>;
@@ -343,6 +346,11 @@ export interface CoordinatorDeps {
   workspacePathFor(agentId: string): string;
   pollIntervalMs?: number;   // default 500
   stageTimeoutMs?: number;   // default 90_000
+  /**
+   * Prompt assembly. Defaults to W4's buildStagePrompt; injectable so the
+   * coordinator and its tests do not depend on W4's implementation landing first.
+   */
+  buildPrompt?: (input: PromptInput) => string;
 }
 
 export class SessionCoordinator {
