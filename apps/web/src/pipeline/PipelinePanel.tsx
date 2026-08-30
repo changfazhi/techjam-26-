@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { pipelineApi } from "../api";
 import type { Artifact, Session, SessionEvent, Stage } from "../types";
 import "./pipeline.css";
@@ -13,6 +13,7 @@ export interface PipelinePanelProps {
 }
 
 export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
+  const titleId = useId();
   const afterSeq = useRef(0);
   const fixture = useMemo(() => makeFixture(agentId), [agentId]);
   const [session, setSession] = useState<Session>(fixture.session);
@@ -137,12 +138,12 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
   return (
     <section
       className={"pipeline-panel" + (live ? "" : " is-fixture")}
-      aria-labelledby="pipeline-title"
+      aria-labelledby={titleId}
     >
       <header className="pipeline-panel-head">
         <div>
           <span className="eyebrow">Handoff Gate</span>
-          <h2 id="pipeline-title">Pipeline</h2>
+          <h2 id={titleId}>Pipeline</h2>
           <p>{session.title}</p>
         </div>
         <div className="pipeline-actions">
