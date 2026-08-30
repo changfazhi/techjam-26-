@@ -350,6 +350,7 @@ describe("W4: Prompt Assembly (prompt.ts)", () => {
     schemaId: "summary",
     outputPath: "summary.json",
     inputFileName: "research.json",
+    instruction: "Condense the research claims into cited key points.",
     maxAttempts: 2,
   };
 
