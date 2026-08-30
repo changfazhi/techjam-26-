@@ -40,27 +40,6 @@
   gap: 8px;
 }
 
-.pipeline-actions button {
-  min-height: 32px;
-  padding: 0 11px;
-  color: var(--ink);
-  cursor: pointer;
-  background: #f0efea;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
-
-.pipeline-actions .pipeline-stop {
-  color: #ae4646;
-  background: #f7e9e7;
-  border-color: #e6bdb8;
-}
-
-.pipeline-actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
 .pipeline-status {
   flex-wrap: wrap;
   gap: 8px;
