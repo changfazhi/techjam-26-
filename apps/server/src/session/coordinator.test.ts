@@ -10,7 +10,11 @@ import type { AgentRunner, RunnerRequest, RunnerResult } from "../types.js";
 import { WorkspaceManager } from "../workspace.js";
 import { FileArtifactBroker } from "./broker.js";
 import { SessionCoordinator, type CoordinatorDeps } from "./coordinator.js";
-import type { SchemaRegistry, ValidationResult } from "./schemas/index.js";
+import {
+  createSchemaRegistry,
+  type SchemaRegistry,
+  type ValidationResult,
+} from "./schemas/index.js";
 import { SessionStore } from "./session-store.js";
 import type { CreateSessionInput } from "./types.js";
 
@@ -506,5 +510,91 @@ describe("FileArtifactBroker", () => {
         "",
       ),
     ).rejects.toMatchObject({ statusCode: 400 });
+  });
+});
+
+// --------------------------------------------------------------------------
+// Integration: the real schema registry, not a fake
+// --------------------------------------------------------------------------
+
+/**
+ * Every other test in this file substitutes schemasThat(...), whose validate
+ * ignores ValidationContext entirely. That is why the coordinator could hand
+ * schemas Artifact metadata instead of admitted values for as long as it did:
+ * no test on either side crossed the seam. These drive the real registry.
+ */
+describe("SessionCoordinator + the real schema registry", () => {
+  const REAL_RESEARCH = JSON.stringify({
+    claims: [
+      { id: "claim-1", text: "Recycling recovers lithium.", confidence: 0.9, sourceId: "source-1.md" },
+      { id: "claim-2", text: "Recovery rates are rising.", confidence: 0.8, sourceId: "source-1.md" },
+      { id: "claim-3", text: "Cost per cell is falling.", confidence: 0.7, sourceId: "source-1.md" },
+    ],
+  });
+  const REAL_SUMMARY = JSON.stringify({
+    keyPoints: [{ text: "Lithium is recoverable at rising rates.", citedClaimIds: ["claim-1", "claim-2"] }],
+  });
+  const REAL_REPORT =
+    "# Battery Recycling\n\nLithium is recoverable at rising rates.\n\n## References\n- source-1.md\n";
+
+  function scriptAll(
+    harness: Harness,
+    ids: { researcher: string; summarizer: string; formatter: string },
+    summary = REAL_SUMMARY,
+  ): void {
+    harness.scripted.set(ids.researcher, [{ write: { fileName: "research.json", content: REAL_RESEARCH } }]);
+    harness.scripted.set(ids.summarizer, [{ write: { fileName: "summary.json", content: summary } }]);
+    harness.scripted.set(ids.formatter, [{ write: { fileName: "report.md", content: REAL_REPORT } }]);
+  }
+
+  it("completes all three stages with every gate actually enforced", async () => {
+    const harness = await makeHarness();
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    scriptAll(harness, { researcher: researcher.id, summarizer: summarizer.id, formatter: formatter.id });
+
+    const session = await harness.sessions.create(
+      threeStageInput(researcher.id, summarizer.id, formatter.id),
+    );
+    await coordinatorFor(harness, { schemas: createSchemaRegistry() }).start(session.id);
+    await expect
+      .poll(() => harness.sessions.get(session.id)?.state, { timeout: 5_000 })
+      .toBe("completed");
+
+    const finished = harness.sessions.require(session.id);
+    expect(finished.version).toBe(3);
+
+    // The seam: later stages receive the parsed value that was admitted,
+    // not the Artifact metadata record.
+    const admitted = finished.sharedState.artifactValues["research"] as { claims: unknown[] };
+    expect(admitted.claims).toHaveLength(3);
+    expect(finished.sharedState.artifacts["research"]?.hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("holds the summary stage when a citation resolves to no admitted claim", async () => {
+    const harness = await makeHarness();
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    scriptAll(
+      harness,
+      { researcher: researcher.id, summarizer: summarizer.id, formatter: formatter.id },
+      JSON.stringify({ keyPoints: [{ text: "Cobalt is recoverable.", citedClaimIds: ["claim-99"] }] }),
+    );
+
+    const session = await harness.sessions.create(
+      threeStageInput(researcher.id, summarizer.id, formatter.id),
+    );
+    await coordinatorFor(harness, { schemas: createSchemaRegistry() }).start(session.id);
+    await expect
+      .poll(() => harness.sessions.get(session.id)?.state, { timeout: 5_000 })
+      .toBe("failed");
+
+    const finished = harness.sessions.require(session.id);
+    expect(finished.sharedState.artifacts["research"]).toBeDefined();
+    expect(finished.sharedState.artifacts["summary"]).toBeUndefined();
+
+    const violations = harness.sessions
+      .events(session.id)
+      .filter((event) => event.type === "stage.rejected")
+      .flatMap((event) => event.payload.violations ?? []);
+    expect(violations.join(" ")).toMatch(/claim-99/);
   });
 });

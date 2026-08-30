@@ -40,7 +40,7 @@ export class SessionStore {
       stages,
       sourceManifest: input.sources.map((source) => source.name),
       state: "idle",
-      sharedState: { currentStageIndex: 0, artifacts: {}, attempts: {} },
+      sharedState: { currentStageIndex: 0, artifacts: {}, artifactValues: {}, attempts: {} },
       version: 0,
       error: null,
       createdAt: timestamp,

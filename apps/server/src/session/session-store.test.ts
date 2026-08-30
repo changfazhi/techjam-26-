@@ -64,6 +64,7 @@ describe("SessionStore", () => {
     expect(session.sharedState).toEqual({
       currentStageIndex: 0,
       artifacts: {},
+      artifactValues: {},
       attempts: {},
     });
     expect(session.sourceManifest).toEqual(["source-1.md"]);
