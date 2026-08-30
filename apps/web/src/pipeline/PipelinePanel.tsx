@@ -92,9 +92,9 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
     finally { setStopping(false); }
   };
 
-  return <section className="pipeline-panel" aria-labelledby="pipeline-title">
+  return <section className={"pipeline-panel" + (live ? "" : " is-fixture")} aria-labelledby="pipeline-title">
     <header className="pipeline-panel-head"><div><span className="eyebrow">Handoff Gate</span><h2 id="pipeline-title">Pipeline</h2><p>{session.title}</p></div><div className="pipeline-actions"><button className="button pipeline-stop" type="button" onClick={stop} disabled={!live || session.state !== "running" || stopping}>{stopping ? "Stopping..." : "Stop"}</button><button type="button" onClick={onClose}>Close</button></div></header>
-    <div className="pipeline-status"><strong>{session.state}</strong><span>{session.version} / {session.stages.length} admitted</span>{!live && <span className="fixture-badge">Demo fixture</span>}</div>
+    <div className="pipeline-status"><strong>{session.state}</strong><span>{session.version} / {session.stages.length} admitted</span>{!live && <span className="fixture-badge">Demo fixture &mdash; not live data</span>}</div>
     {note && <p className="pipeline-note">{note}{!live ? " Showing the demo fixture." : ""}</p>}
     <p className="pipeline-invariant">three stages, in order, each admitted exactly once, no held artifact propagated.</p>
     <StageTimeline stages={session.stages} events={events} attempts={session.sharedState.attempts} />

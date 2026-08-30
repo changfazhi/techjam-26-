@@ -75,6 +75,25 @@
   border-radius: 999px;
 }
 
+/* The fixture must never be mistaken for a live run. */
+.pipeline-panel.is-fixture {
+  border-color: #806220;
+  border-style: dashed;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgb(255 215 125 / 4%) 0 12px,
+      transparent 12px 34px
+    ),
+    #08111f;
+}
+
+.pipeline-panel.is-fixture .pipeline-timeline,
+.pipeline-panel.is-fixture .pipeline-artifact-chain {
+  filter: saturate(35%);
+  opacity: 0.72;
+}
+
 .pipeline-status .fixture-badge {
   color: #ffd77d;
   background: #3d3014;
