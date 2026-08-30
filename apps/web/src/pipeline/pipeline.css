@@ -1,49 +1,286 @@
-/* Handoff Gate — pipeline panel styles. Owned by W5. */
-
 .pipeline-panel {
-  border: 1px solid var(--border, #23252b);
-  border-radius: 14px;
-  padding: 20px 22px;
-  margin: 0 0 18px;
-  background: var(--surface, #14161b);
   display: grid;
-  gap: 12px;
+  gap: 16px;
+  max-width: 960px;
+  padding: 20px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+
+.pipeline-panel-head,
+.pipeline-actions,
+.pipeline-status,
+.stage-title {
+  display: flex;
+  align-items: center;
 }
 
 .pipeline-panel-head {
-  display: flex;
-  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
 
-.pipeline-panel-head h2 {
-  margin: 4px 0 0;
-  font-size: 1.15rem;
-}
-
-.pipeline-panel-head button {
-  background: none;
-  border: none;
-  color: inherit;
-  font-size: 1.4rem;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0.65;
-}
-
-.pipeline-panel-head button:hover,
-.pipeline-panel-head button:focus-visible {
-  opacity: 1;
-}
-
-.pipeline-placeholder {
+.pipeline-panel h2,
+.pipeline-panel h3,
+.pipeline-panel p {
   margin: 0;
-  opacity: 0.75;
-  font-size: 0.92rem;
 }
 
-.pipeline-placeholder-meta {
-  font-size: 0.78rem;
-  opacity: 0.5;
+.pipeline-panel-head p,
+.pipeline-note,
+.pipeline-artifact-chain span,
+.pipeline-artifact-chain time {
+  color: var(--muted);
+}
+
+.pipeline-actions {
+  gap: 8px;
+}
+
+.pipeline-status {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pipeline-status span {
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+/* The fixture must never be mistaken for a live run. */
+.pipeline-panel.is-fixture {
+  border-color: #c99a2b;
+  border-style: dashed;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgb(201 154 43 / 9%) 0 12px,
+      transparent 12px 34px
+    ),
+    var(--paper);
+}
+
+.pipeline-panel.is-fixture .pipeline-timeline,
+.pipeline-panel.is-fixture .pipeline-artifact-chain {
+  filter: saturate(35%);
+  opacity: 0.72;
+}
+
+.pipeline-status .fixture-badge {
+  color: #8a6100;
+  background: #fdf3d8;
+  border-color: #e3c477;
+}
+
+.pipeline-invariant {
+  padding: 10px 12px;
+  color: #1f6b4f;
+  background: #eaf6f0;
+  border: 1px solid #b9e0cd;
+  border-radius: 8px;
+}
+
+.pipeline-error {
+  padding: 9px 11px;
+  color: #8f3b3b;
+  background: #f7e9e7;
+  border: 1px solid #e6bdb8;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.pipeline-note {
+  padding: 9px 11px;
+  background: #f0efea;
+  border-left: 3px solid var(--purple);
+}
+
+.pipeline-section {
+  padding-top: 4px;
+}
+
+.pipeline-section h3 {
+  margin-bottom: 9px;
+  font-size: 14px;
+}
+
+.pipeline-timeline,
+.pipeline-artifact-chain {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.pipeline-timeline {
+  display: grid;
+  gap: 9px;
+}
+
+.pipeline-stage {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.stage-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--muted);
+  background: #f0efea;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+
+.pipeline-stage.running .stage-mark {
+  color: var(--purple-dark);
+  background: var(--purple-soft);
+  border-color: var(--purple);
+  animation: pipeline-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pipeline-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-stage.running .stage-mark {
+    animation: none;
+  }
+}
+
+.pipeline-stage.admitted .stage-mark {
+  color: #fff;
+  background: var(--green);
+  border-color: var(--green);
+}
+
+.stage-content {
+  min-width: 0;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.stage-title {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stage-title span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.stage-content p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pipeline-violations {
+  margin-top: 8px;
+  color: #8f3b3b;
+}
+
+.pipeline-violations summary {
+  cursor: pointer;
+  color: var(--red);
+  font-weight: 700;
+}
+
+.pipeline-violations ul {
+  padding-left: 18px;
+  margin: 7px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.pipeline-artifact-chain {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.pipeline-artifact-chain li {
+  position: relative;
+  min-width: 0;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.pipeline-artifact-chain li:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  right: -17px;
+  color: var(--muted);
+  content: "→";
+  transform: translateY(-50%);
+}
+
+.pipeline-artifact-chain strong,
+.pipeline-artifact-chain span,
+.pipeline-artifact-chain time {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.pipeline-artifact-chain span,
+.pipeline-artifact-chain time {
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.pipeline-artifact-chain details {
+  margin-top: 9px;
+}
+
+.pipeline-artifact-chain summary {
+  cursor: pointer;
+  color: var(--purple);
+  font-size: 12px;
+}
+
+.pipeline-artifact-chain pre {
+  max-height: 180px;
+  padding: 8px;
+  overflow: auto;
+  color: var(--ink);
+  background: #f6f5f1;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+
+@media (max-width: 660px) {
+  .pipeline-panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pipeline-artifact-chain {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .pipeline-artifact-chain li:not(:last-child)::after {
+    top: auto;
+    right: 50%;
+    bottom: -17px;
+    transform: translateX(50%) rotate(90deg);
+  }
 }

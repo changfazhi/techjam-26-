@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Stage schema: summary.
  * Owned by W4 (Schemas). See docs/PLAN.md section 2 for the admission rule.
  *
