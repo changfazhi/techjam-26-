@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { pipelineApi } from "../api";
 import type { Artifact, Session, SessionEvent, Stage } from "../types";
 import "./pipeline.css";
@@ -14,18 +14,18 @@ export interface PipelinePanelProps {
 
 export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
   const afterSeq = useRef(0);
-  const [session, setSession] = useState<Session>(() => makeFixture(agentId).session);
-  const [events, setEvents] = useState<SessionEvent[]>(() => makeFixture(agentId).events);
+  const fixture = useMemo(() => makeFixture(agentId), [agentId]);
+  const [session, setSession] = useState<Session>(fixture.session);
+  const [events, setEvents] = useState<SessionEvent[]>(fixture.events);
   const [live, setLive] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
 
   useEffect(() => {
     let active = true;
-    const nextFixture = makeFixture(agentId);
-    afterSeq.current = nextFixture.events.at(-1)?.seq ?? 0;
-    setSession(nextFixture.session);
-    setEvents(nextFixture.events);
+    afterSeq.current = fixture.events.at(-1)?.seq ?? 0;
+    setSession(fixture.session);
+    setEvents(fixture.events);
     setLive(false);
     setNote(null);
 
@@ -64,7 +64,7 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
     return () => {
       active = false;
     };
-  }, [agentId]);
+  }, [agentId, fixture]);
 
   useEffect(() => {
     if (!live || session.state !== "running") return;
