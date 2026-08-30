@@ -30,6 +30,16 @@ export function buildStagePrompt(input: PromptInput): string {
     `You are acting as the **${stage.role}** for this session.\nFollow the requirements below carefully.`,
   );
 
+  // The task itself. Stage.instruction is the only carrier of what this stage is
+  // actually for, so a prompt without it tells the agent its role and its output
+  // shape but never what to do.
+  // Tolerates a missing value: stages are rehydrated from .data/launchpad.json,
+  // which may hold sessions written before this field existed.
+  const instruction = (stage.instruction ?? "").trim();
+  if (instruction.length > 0) {
+    sections.push(`## Your task\n${instruction}`);
+  }
+
   // Required output specification
   sections.push(
     `## Required output\n` +
