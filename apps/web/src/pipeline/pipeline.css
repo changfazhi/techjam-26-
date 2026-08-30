@@ -3,11 +3,11 @@
   gap: 16px;
   max-width: 960px;
   padding: 20px;
-  color: #eaf2ff;
-  background: #08111f;
-  border: 1px solid #294260;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
   border-radius: 14px;
-  box-shadow: 0 16px 50px rgb(0 0 0 / 35%);
+  box-shadow: var(--shadow);
 }
 
 .pipeline-panel-head,
@@ -33,7 +33,7 @@
 .pipeline-note,
 .pipeline-artifact-chain span,
 .pipeline-artifact-chain time {
-  color: #9eb2c9;
+  color: var(--muted);
 }
 
 .pipeline-actions {
@@ -43,17 +43,17 @@
 .pipeline-actions button {
   min-height: 32px;
   padding: 0 11px;
-  color: #eaf2ff;
+  color: var(--ink);
   cursor: pointer;
-  background: #15243a;
-  border: 1px solid #405d7d;
+  background: #f0efea;
+  border: 1px solid var(--line);
   border-radius: 6px;
 }
 
 .pipeline-actions .pipeline-stop {
-  color: #fff;
-  background: #a42b37;
-  border-color: #d7505d;
+  color: #ae4646;
+  background: #f7e9e7;
+  border-color: #e6bdb8;
 }
 
 .pipeline-actions button:disabled {
@@ -71,21 +71,22 @@
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.04em;
-  border: 1px solid #456684;
+  color: var(--muted);
+  border: 1px solid var(--line);
   border-radius: 999px;
 }
 
 /* The fixture must never be mistaken for a live run. */
 .pipeline-panel.is-fixture {
-  border-color: #806220;
+  border-color: #c99a2b;
   border-style: dashed;
   background:
     repeating-linear-gradient(
       135deg,
-      rgb(255 215 125 / 4%) 0 12px,
+      rgb(201 154 43 / 9%) 0 12px,
       transparent 12px 34px
     ),
-    #08111f;
+    var(--paper);
 }
 
 .pipeline-panel.is-fixture .pipeline-timeline,
@@ -95,32 +96,32 @@
 }
 
 .pipeline-status .fixture-badge {
-  color: #ffd77d;
-  background: #3d3014;
-  border-color: #806220;
+  color: #8a6100;
+  background: #fdf3d8;
+  border-color: #e3c477;
 }
 
 .pipeline-invariant {
   padding: 10px 12px;
-  color: #a9f6c4;
-  background: #0c2d24;
-  border: 1px solid #227549;
+  color: #1f6b4f;
+  background: #eaf6f0;
+  border: 1px solid #b9e0cd;
   border-radius: 8px;
 }
 
 .pipeline-error {
   padding: 9px 11px;
-  color: #ffd4d8;
-  background: #2d1014;
-  border: 1px solid #a42b37;
+  color: #8f3b3b;
+  background: #f7e9e7;
+  border: 1px solid #e6bdb8;
   border-radius: 8px;
   overflow-wrap: anywhere;
 }
 
 .pipeline-note {
   padding: 9px 11px;
-  background: #102035;
-  border-left: 3px solid #5e9dd7;
+  background: #f0efea;
+  border-left: 3px solid var(--purple);
 }
 
 .pipeline-section {
@@ -157,16 +158,16 @@
   place-items: center;
   font-size: 13px;
   font-weight: 800;
-  color: #f6d888;
-  background: #412f16;
-  border: 1px solid #9a7225;
+  color: var(--muted);
+  background: #f0efea;
+  border: 1px solid var(--line);
   border-radius: 50%;
 }
 
 .pipeline-stage.running .stage-mark {
-  color: #cfe6ff;
-  background: #123353;
-  border-color: #5e9dd7;
+  color: var(--purple-dark);
+  background: var(--purple-soft);
+  border-color: var(--purple);
   animation: pipeline-pulse 1.4s ease-in-out infinite;
 }
 
@@ -183,16 +184,16 @@
 }
 
 .pipeline-stage.admitted .stage-mark {
-  color: #061a10;
-  background: #73e6a1;
-  border-color: #b7ffd1;
+  color: #fff;
+  background: var(--green);
+  border-color: var(--green);
 }
 
 .stage-content {
   min-width: 0;
   padding: 10px 12px;
-  background: #0e1b2c;
-  border: 1px solid #2c465f;
+  background: #fff;
+  border: 1px solid var(--line);
   border-radius: 8px;
 }
 
@@ -202,24 +203,24 @@
 }
 
 .stage-title span {
-  color: #9eb2c9;
+  color: var(--muted);
   font-size: 13px;
 }
 
 .stage-content p {
   margin-top: 4px;
-  color: #9eb2c9;
+  color: var(--muted);
   font-size: 13px;
 }
 
 .pipeline-violations {
   margin-top: 8px;
-  color: #ffd4d8;
+  color: #8f3b3b;
 }
 
 .pipeline-violations summary {
   cursor: pointer;
-  color: #ff9da7;
+  color: var(--red);
   font-weight: 700;
 }
 
@@ -238,8 +239,8 @@
   position: relative;
   min-width: 0;
   padding: 12px;
-  background: #0e1b2c;
-  border: 1px solid #2c465f;
+  background: #fff;
+  border: 1px solid var(--line);
   border-radius: 8px;
 }
 
@@ -247,7 +248,7 @@
   position: absolute;
   top: 50%;
   right: -17px;
-  color: #82b4df;
+  color: var(--muted);
   content: "→";
   transform: translateY(-50%);
 }
@@ -271,7 +272,7 @@
 
 .pipeline-artifact-chain summary {
   cursor: pointer;
-  color: #a7cff4;
+  color: var(--purple);
   font-size: 12px;
 }
 
@@ -279,8 +280,9 @@
   max-height: 180px;
   padding: 8px;
   overflow: auto;
-  color: #d6e9ff;
-  background: #07101c;
+  color: var(--ink);
+  background: #f6f5f1;
+  border: 1px solid var(--line);
   border-radius: 5px;
 }
 
