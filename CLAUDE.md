@@ -26,18 +26,39 @@ claim can reach the final report**, enforced in the control plane rather than by
 Update this section when the picture changes — it is the fastest way for a cold session to
 orient.
 
+**Every module in BLUEPRINT.md §3 is now written.** No stub remains: `grep -r "not
+implemented" apps/server/src` returns nothing. What is missing is not code — it is that none of
+it has ever run.
+
 | Area | State |
 |---|---|
 | Data model, `SessionStore`, `JsonStore` wiring | **Done** (`session/types.ts`, `session/session-store.ts`) |
-| `MockRunner` (`RUNTIME_PROVIDER=mock`) | **Done**, basic; misbehaviour modes are W5's |
-| `SessionCoordinator` + `FileArtifactBroker` | **Done** — dispatch, validate, admit/hold, retry budget, timeout recovery, stop. Lands via PRs #1 and #2; on `main` these are still stubs until those merge |
-| Stage schemas and the citation gate | **Stub, throws** — `session/schemas/*.ts`. This is the headline feature and it is unwritten |
-| Prompt assembly | **Stub, throws** — `session/prompt.ts` |
-| HTTP routes | **Placeholder** — `session/routes.ts` has one `GET /api/sessions` |
-| Pipeline UI | **Placeholder** — `apps/web/src/pipeline/PipelinePanel.tsx` |
+| `MockRunner` (`RUNTIME_PROVIDER=mock`) | **Done**, including the misbehaviour modes W2's tests drive |
+| `SessionCoordinator` + `FileArtifactBroker` | **Done** — dispatch, validate, admit/hold, retry budget, timeout recovery, stop |
+| Stage schemas and the citation gate | **Done** — `session/schemas/*.ts`, including the cross-cutting credential scan in `redaction.ts` |
+| Prompt assembly | **Done** — `session/prompt.ts` |
+| HTTP routes | **Done** — all six in `session/routes.ts`, 18 tests in `routes.test.ts` |
+| Pipeline UI | **Done, fixture-backed** — `apps/web/src/pipeline/PipelinePanel.tsx`. Its live paths (polling, terminal-event pull, Stop) became reachable only when the routes landed and **have never been exercised against a real session** |
 | Baseline acceptance test | **Never run.** `.data/`, `workspaces/`, `codex-home/` are empty; no real model call has ever been made |
 
-Every stub throws `not implemented: W<n> (<file>)`, so a surprise failure names its owner.
+`npm run check` on `main` passes: 111 tests, both typechecks, both production builds.
+
+### What is actually left
+
+The risk has moved from "unwritten" to "unverified". In rough order of how likely each is to
+surprise you:
+
+1. **No end-to-end run has ever happened.** Whether a real Codex agent writes to `outputPath` in
+   a form `FileArtifactBroker` collects, and whether a real model clears the schemas inside
+   `maxAttempts`, are both untested assumptions. `scripts/demo-pipeline.sh` drives the whole API
+   for this; it has never been run and is referenced from no npm script or doc.
+2. **The panel's live paths.** Everything visible today is the demo fixture. A panel showing the
+   fixture is deliberately marked (dashed border, watermark, "not live data" badge) — if you see
+   that during a demo, the routes did not answer.
+3. **UI module split.** BLUEPRINT §3 lists `StageTimeline.tsx`, `ArtifactViewer.tsx` and
+   `usePipeline.ts`. The first two exist as functions inside `PipelinePanel.tsx`; the hook was
+   never extracted and polling lives in inline `useEffect`s. Cosmetic against the blueprint's
+   intent, worth knowing before you go looking for the files.
 
 ## Hard rules
 
