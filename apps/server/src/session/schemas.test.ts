@@ -259,8 +259,7 @@ describe("W4: Stage 2 Schema — Citation Gate (summary.ts)", () => {
 });
 
 describe("W4: Stage 3 Schema (report.ts)", () => {
-  it("admits valid markdown report containing a References section", () => {
-    const validReport = `# Q3 Market Performance Report
+  const validReport = `# Q3 Market Performance Report
 
 ## Executive Summary
 The company experienced strong financial results and customer acquisition.
@@ -273,11 +272,37 @@ The company experienced strong financial results and customer acquisition.
 - doc1.txt: Financial Statements 2025
 - doc2.pdf: Customer Operations Review
 `;
+
+  it("admits valid markdown report containing a References section", () => {
+    const result = reportSchema.validate(validReport, {
+      // Stage 3 now traces the report back to the admitted stage 1 and 2
+      // artifacts, so both must be supplied for a report to be admissible.
+      priorArtifacts: {
+        research: {
+          claims: [
+            { id: "claim-1", text: "Revenue rose.", confidence: 0.9, sourceId: "doc1.txt" },
+          ],
+        },
+        summary: {
+          keyPoints: [
+            { text: "Revenue grew 14% year over year.", citedClaimIds: ["claim-1"] },
+          ],
+        },
+      },
+      sourceManifest: ["doc1.txt", "doc2.pdf"],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a report it cannot trace back to the summary stage", () => {
     const result = reportSchema.validate(validReport, {
       priorArtifacts: {},
       sourceManifest: ["doc1.txt", "doc2.pdf"],
     });
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.violations.some((v) => v.includes("unavailable"))).toBe(true);
+    }
   });
 
   it("rejects empty or whitespace report", () => {
@@ -311,7 +336,7 @@ The company experienced strong financial results and customer acquisition.
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.violations.some((v) => v.includes("exceeds 8,000 characters"))).toBe(true);
+      expect(result.violations.some((v) => v.includes("under 8,000 characters"))).toBe(true);
     }
   });
 
