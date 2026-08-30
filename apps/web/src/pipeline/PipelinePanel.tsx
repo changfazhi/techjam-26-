@@ -232,8 +232,8 @@ function StageTimeline({
                     <summary>Held on attempt {held.map((event) => event.attempt ?? "?").join(", ")}</summary>
                     <ul>
                       {held.flatMap((event) =>
-                        (event.payload.violations ?? []).map((violation) => (
-                          <li key={event.id + violation}>{violation}</li>
+                        (event.payload.violations ?? []).map((violation, violationIndex) => (
+                          <li key={event.id + "#" + violationIndex}>{violation}</li>
                         )),
                       )}
                     </ul>
