@@ -19,6 +19,44 @@ const eventsQuery = z.object({
   after: z.coerce.number().int().min(0).default(0),
 });
 
+const workspaceFileName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(255)
+  .refine((value) => !value.includes("..") && !value.startsWith("/") && !value.startsWith("\\"), {
+    message: "Must be a relative workspace path",
+  });
+
+const createSessionBody = z.object({
+  title: z.string().trim().min(1).max(200),
+  topic: z.string().trim().min(1).max(10_000),
+  stages: z
+    .array(
+      z.object({
+        id: z.string().trim().min(1).max(80),
+        role: z.string().trim().min(1).max(80),
+        agentId: z.string().uuid(),
+        schemaId: z.string().trim().min(1).max(80),
+        outputPath: workspaceFileName,
+        inputFileName: workspaceFileName.nullable(),
+        instruction: z.string().trim().min(1).max(10_000),
+        maxAttempts: z.number().int().min(1).max(10).optional(),
+      }),
+    )
+    .min(1)
+    .max(10),
+  sources: z
+    .array(
+      z.object({
+        name: workspaceFileName,
+        content: z.string().max(100_000),
+      }),
+    )
+    .min(1)
+    .max(10),
+});
+
 export interface SessionRouteDeps {
   sessions: SessionStore;
   coordinator: SessionCoordinator;
@@ -38,6 +76,23 @@ export async function sessionRoutes(
   // POST   /api/sessions/:id/start
   // POST   /api/sessions/:id/stop
   // GET    /api/sessions/:id/events?after=<seq>
+  app.post("/api/sessions", async (request, reply) => {
+    const input = createSessionBody.parse(request.body);
+
+    for (const stage of input.stages) {
+      deps.agents.getAgent(stage.agentId);
+    }
+
+    const firstStage = input.stages[0];
+    if (!firstStage) {
+      throw new Error("Session must contain a stage");
+    }
+    await deps.broker.seed(deps.workspacePathFor(firstStage.agentId), input.sources);
+
+    const session = await deps.sessions.create(input);
+    return reply.code(201).send({ session });
+  });
+
   app.get("/api/sessions/:id", async (request) => {
   const { id } = sessionIdParams.parse(request.params);
   return { session: deps.sessions.require(id) };
