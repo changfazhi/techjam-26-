@@ -33,7 +33,7 @@ const SECRET_PATTERNS: Array<{
   },
   {
     // Explicit Ark API key variable or assignment
-    regex: /\b(?:ARK_API_KEY|ark_api_key)\s*[:=]\s*['"]?[a-zA-Z0-9_\-\..]{8,}['"]?/g,
+    regex: /\b(?:ARK_API_KEY|ark_api_key)\s*[:=]\s*['"]?[a-zA-Z0-9_\-.]{8,}['"]?/g,
     kind: "ark-key",
     hint: "Artifact contains an Ark API key assignment",
   },
@@ -61,7 +61,7 @@ const SECRET_PATTERNS: Array<{
   },
   {
     // Common API key / secret key variable assignments
-    regex: /\b(?:api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*['"][a-zA-Z0-9_\-\..]{16,}['"]/gi,
+    regex: /\b(?:api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token)\s*[:=]\s*['"][a-zA-Z0-9_\-.]{16,}['"]/gi,
     kind: "token-like",
     hint: "Artifact contains an API key or auth token assignment",
   },
