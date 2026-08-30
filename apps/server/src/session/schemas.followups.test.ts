@@ -176,6 +176,17 @@ describe("redaction fixes: false positive regression & deduplication", () => {
     expect(scanForSecrets(text)).toEqual([]);
   });
 
+  it("flags an ep- endpoint id whose numeric segment is not first", () => {
+    const findings = scanForSecrets("Connecting to endpoint ep-m-20240830123456");
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.kind).toBe("ark-key");
+    expect(findings[0]?.hint).not.toContain("ep-m-20240830123456");
+  });
+
+  it("flags an ep- endpoint id with short digit runs", () => {
+    expect(scanForSecrets("endpoint ep-2024-0830-abcde").length).toBe(1);
+  });
+
   it("flags a lowercase bearer token in an Authorization header", () => {
     const findings = scanForSecrets("authorization: bearer abcdefghijklmnopqrstuvwxyz123");
     expect(findings.length).toBe(1);

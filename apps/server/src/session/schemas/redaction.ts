@@ -22,9 +22,12 @@ const SECRET_PATTERNS: Array<{
   hint: string;
 }> = [
   {
-    // Ark endpoint or resource ID tokens: ep- followed by timestamp/id (e.g. ep-20240830-xxxxx)
-    // Anchored to date/numeric segment so URLs like ep-getting-started-guide do not match.
-    regex: /\bep-\d{8,}[a-zA-Z0-9_\-]*\b/g,
+    // Ark endpoint or resource ID tokens, e.g. ep-20240830-xxxxx. The lookahead
+    // requires a digit somewhere in the token, which every real endpoint id has
+    // (they carry a timestamp) and doc slugs like ep-getting-started-guide do
+    // not. Known gap, accepted: a purely alphabetic ep-abcdefghijkl is
+    // indistinguishable from a doc slug without that digit signal.
+    regex: /\bep-(?=[a-zA-Z0-9_\-]*\d)[a-zA-Z0-9_\-]{8,}\b/g,
     kind: "ark-key",
     hint: "Artifact contains an Ark endpoint key (ep-...)",
   },
