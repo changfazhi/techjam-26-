@@ -206,6 +206,7 @@
 .pipeline-violations ul {
   padding-left: 18px;
   margin: 7px 0 0;
+  overflow-wrap: anywhere;
 }
 
 .pipeline-artifact-chain {
