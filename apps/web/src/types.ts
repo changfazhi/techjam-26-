@@ -86,6 +86,7 @@ export interface Artifact {
 export interface SharedState {
   currentStageIndex: number;
   artifacts: Record<string, Artifact>;
+  /** stageId -> the parsed value the stage's schema admitted. */
   artifactValues: Record<string, unknown>;
   attempts: Record<string, number>;
 }

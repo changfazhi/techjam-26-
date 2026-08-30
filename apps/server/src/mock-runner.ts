@@ -1,16 +1,9 @@
 /**
- * Deterministic AgentRunner for development and tests.
- * Owned by W5 (Runtime & UI).
- *
- * Selected with RUNTIME_PROVIDER=mock. Needs no container engine and no Ark key,
- * which turns a 90-second feedback loop into a sub-second one. W5 extends this
- * with misbehaviour modes (wrong citation, no file written, hang) as the
- * coordinator tests need them.
- */
-
-/**
  * Deterministic AgentRunner for development and coordinator tests.
  * Owned by W5 (Runtime & UI).
+ *
+ * Selected with RUNTIME_PROVIDER=mock. It produces stage-shaped artifacts and
+ * supports deliberate failure modes used by coordinator tests.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -39,9 +32,15 @@ export interface RunResult {
 const DEFAULT_CONFIG: MockRunnerConfig = { misbehaviour: "NONE" };
 const VALID_CITATIONS = ["claim-1"];
 
+interface ActiveRun {
+  cancelled: boolean;
+  releaseHang: (() => void) | null;
+  settled: Promise<void>;
+  settle: () => void;
+}
+
 export class MockRunner implements AgentRunner {
-  private readonly cancelled = new Set<string>();
-  private readonly hanging = new Map<string, () => void>();
+  private readonly active = new Map<string, ActiveRun>();
 
   constructor(private readonly config: MockRunnerConfig = DEFAULT_CONFIG) {}
 
@@ -50,49 +49,77 @@ export class MockRunner implements AgentRunner {
   }
 
   async cancel(agentId: string): Promise<boolean> {
-    const release = this.hanging.get(agentId);
-    if (!release) return false;
+    const active = this.active.get(agentId);
+    if (!active) return false;
 
-    this.cancelled.add(agentId);
-    this.hanging.delete(agentId);
-    release();
+    active.cancelled = true;
+    active.releaseHang?.();
+    await active.settled;
     return true;
   }
 
   async run(): Promise<RunResult>;
   async run(request: RunnerRequest): Promise<RunnerResult>;
   async run(request?: RunnerRequest): Promise<RunResult | RunnerResult> {
-    const result = await this.runResult(request);
-    if (!request) return result;
+    if (!request) return this.runResult();
 
-    if (this.cancelled.delete(request.agentId)) {
-      throw new RunCancelledError();
-    }
-
-    if (result.status === "TIMEOUT") {
-      throw new Error("Mock runner timed out after the configured deadline");
-    }
-
-    if (result.status === "FAILED") {
-      throw new Error(result.violations?.join("; ") ?? "Mock runner failed");
-    }
-
-    if (result.artifact) {
-      await this.writeArtifact(request, result.artifact);
-    }
-
-    return {
-      output: result.artifact
-        ? "```json\n" + result.artifact + "\n```"
-        : "mock runner completed without writing an artifact",
-      threadId: request.threadId ?? "mock-thread-" + request.agentId,
-      usage: { inputTokens: 0, outputTokens: 0 },
-    };
+    return this.runRequest(request);
   }
 
-  private async runResult(request?: RunnerRequest): Promise<RunResult> {
+  private async runRequest(request: RunnerRequest): Promise<RunnerResult> {
+    if (this.active.has(request.agentId)) {
+      throw new Error("Agent already has an active mock run");
+    }
+
+    let resolveSettled: () => void = () => undefined;
+    const active: ActiveRun = {
+      cancelled: false,
+      releaseHang: null,
+      settled: new Promise<void>((resolveSettledPromise) => {
+        resolveSettled = resolveSettledPromise;
+      }),
+      settle: () => resolveSettled(),
+    };
+    this.active.set(request.agentId, active);
+
+    try {
+      const result = await this.runResult(request, active);
+      this.throwIfCancelled(active);
+
+      if (result.status === "TIMEOUT") {
+        throw new Error("Mock runner timed out after the configured deadline");
+      }
+
+      if (result.status === "FAILED") {
+        throw new Error(result.violations?.join("; ") ?? "Mock runner failed");
+      }
+
+      if (result.artifact) {
+        await this.writeArtifact(request, result.artifact);
+      }
+      this.throwIfCancelled(active);
+
+      return {
+        output: result.artifact
+          ? "```json\n" + result.artifact + "\n```"
+          : "mock runner completed without writing an artifact",
+        threadId: request.threadId ?? "mock-thread-" + request.agentId,
+        usage: { inputTokens: 0, outputTokens: 0 },
+      };
+    } finally {
+      active.releaseHang?.();
+      active.releaseHang = null;
+      active.settle();
+      this.active.delete(request.agentId);
+    }
+  }
+
+  private async runResult(
+    request?: RunnerRequest,
+    active?: ActiveRun,
+  ): Promise<RunResult> {
     if (this.config.misbehaviour === "HANG_PAST_DEADLINE") {
-      await this.waitPastDeadline(request?.agentId);
+      await this.waitPastDeadline(active);
       return {
         status: "TIMEOUT",
         violations: ["Mock runner exceeded the configured deadline."],
@@ -104,7 +131,7 @@ export class MockRunner implements AgentRunner {
     if (this.config.misbehaviour === "NO_FILE_WRITTEN") {
       return {
         status: "SUCCESS",
-        citations: VALID_CITATIONS,
+        citations: [...VALID_CITATIONS],
       };
     }
 
@@ -119,29 +146,35 @@ export class MockRunner implements AgentRunner {
     return {
       status: "SUCCESS",
       artifact,
-      citations: VALID_CITATIONS,
+      citations: [...VALID_CITATIONS],
     };
   }
 
-  private async waitPastDeadline(agentId?: string): Promise<void> {
-    const durationMs = this.config.hangDurationMs ?? 3_000;
+  private throwIfCancelled(active: ActiveRun): void {
+    if (active.cancelled) {
+      throw new RunCancelledError();
+    }
+  }
 
-    if (!agentId) {
+  private async waitPastDeadline(active?: ActiveRun): Promise<void> {
+    if (!active) {
+      const durationMs = this.config.hangDurationMs ?? 3_000;
       await new Promise((resolveTimer) => setTimeout(resolveTimer, durationMs));
       return;
     }
 
     await new Promise<void>((resolveWait) => {
-      const timer = setTimeout(() => {
-        this.hanging.delete(agentId);
-        resolveWait();
-      }, durationMs);
+      const timer =
+        this.config.hangDurationMs === undefined
+          ? null
+          : setTimeout(resolveWait, this.config.hangDurationMs);
 
-      this.hanging.set(agentId, () => {
-        clearTimeout(timer);
+      active.releaseHang = () => {
+        if (timer) clearTimeout(timer);
         resolveWait();
-      });
+      };
     });
+    active.releaseHang = null;
   }
 
   private artifactFor(prompt: string): string {
@@ -220,14 +253,30 @@ export class MockRunner implements AgentRunner {
   }
 
   private outputPath(prompt: string): string | null {
-    const explicitPath = prompt.match(
-      /(?:write\s+(?:your\s+answer\s+)?to|output\s+path\s*[:=])\s*[`"']?([^`"'\s]+)[`"']?/i,
-    )?.[1];
+    const explicitPath = this.explicitOutputPath(prompt);
 
     if (explicitPath) return explicitPath;
 
-    return (
-      prompt.match(/research\.json|summary\.json|report\.md/i)?.[0] ?? null
-    );
+    const fallbackPaths = [...prompt.matchAll(/\b(?:research\.json|summary\.json|report\.md)\b/gi)];
+    return fallbackPaths.at(-1)?.[0] ?? null;
+  }
+
+  private explicitOutputPath(prompt: string): string | null {
+    const instruction =
+      /(?:\bwrite\b(?:\s+[\w.-]+){0,4}\s+\bto\b|\boutput\s+path\s*[:=])\s*(?:`([^`]+)`|"([^"]+)"|'([^']+)'|([A-Za-z0-9_./-]+\.(?:json|md))(?=[\s.,;:!?)]|$))/gi;
+    let outputPath: string | null = null;
+
+    for (const match of prompt.matchAll(instruction)) {
+      const candidate = match[1] ?? match[2] ?? match[3] ?? match[4];
+      const normalised = candidate ? this.normaliseOutputPath(candidate) : null;
+      if (normalised) outputPath = normalised;
+    }
+
+    return outputPath;
+  }
+
+  private normaliseOutputPath(candidate: string): string | null {
+    const outputPath = candidate.trim().replace(/[.,;:!?]+$/, "");
+    return /\.(?:json|md)$/i.test(outputPath) ? outputPath : null;
   }
 }
