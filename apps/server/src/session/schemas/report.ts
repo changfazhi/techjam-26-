@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Stage schema: report.
  * Owned by W4 (Schemas). See docs/PLAN.md section 2 for the admission rule.
  *
@@ -61,14 +61,24 @@ Requirements:
       );
     }
 
-    // Locate the References heading, ignoring anything inside a fenced code
-    // block so a heading quoted in an example cannot satisfy the rule.
-    const headingIndex = findReferencesHeading(raw);
+    // Mask code blocks before inspecting headings
+    const masked = maskCodeBlocks(raw);
+
+    // Locate the ## References heading (level 2 heading)
+    const headingIndex = findReferencesHeading(masked);
     if (headingIndex === null) {
       violations.push(
         "Report must end with a '## References' section listing source documents",
       );
       // Without the split there is nothing to check the remaining rules against.
+      return { ok: false, violations };
+    }
+
+    // Verify no subsequent markdown headings exist after ## References
+    if (hasSubsequentHeadings(masked, headingIndex)) {
+      violations.push(
+        "Report must end with the '## References' section; no subsequent headings are allowed",
+      );
       return { ok: false, violations };
     }
 
@@ -150,10 +160,9 @@ function truncate(text: string, limit = 60): string {
 }
 
 /**
- * Index of the References heading, or null. Fenced code blocks are masked first
- * so a heading shown inside an example does not count as the real section.
+ * Masks fenced code blocks so code samples containing headings are ignored.
  */
-function findReferencesHeading(raw: string): number | null {
+function maskCodeBlocks(raw: string): string {
   let masked = raw;
   for (const fence of raw.matchAll(/^[ \t]*(`{3,}|~{3,})[\s\S]*?^[ \t]*\1[ \t]*$/gm)) {
     const start = fence.index;
@@ -163,12 +172,27 @@ function findReferencesHeading(raw: string): number | null {
       " ".repeat(fence[0].length) +
       masked.slice(start + fence[0].length);
   }
+  return masked;
+}
 
-  const match = masked.match(/(?:^|\n)[ \t]*#{1,6}[ \t]+References\b/i);
+/**
+ * Index of the '## References' heading (level 2), or null.
+ */
+function findReferencesHeading(masked: string): number | null {
+  const match = masked.match(/(?:^|\n)[ \t]*##[ \t]+References\b/i);
   if (!match || match.index === undefined) return null;
 
-  // Point at the "#" rather than the newline preceding it.
+  // Point at the first '#' rather than the newline preceding it.
   return match.index + match[0].indexOf("#");
+}
+
+/**
+ * Checks whether any Markdown headings exist after the ## References heading.
+ */
+function hasSubsequentHeadings(masked: string, fromIndex: number): boolean {
+  const afterHeading = masked.slice(fromIndex);
+  const lines = afterHeading.split("\n").slice(1);
+  return lines.some((line) => /^[ \t]*#{1,6}[ \t]+\S/.test(line));
 }
 
 interface SummaryShape {

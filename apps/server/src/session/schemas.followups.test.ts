@@ -1,12 +1,13 @@
 /**
- * Regression tests for the three W4 follow-up fixes.
- * See the review on PR #7: prompt instruction, stage-3 admission rule,
- * and the fail-open provenance check.
+ * Regression tests for W4 follow-up fixes.
+ * Covers: prompt instruction, stage-3 admission rule, provenance fail-closed,
+ * redaction false positives, multi-key deduplication, claim id uniqueness,
+ * and report References section heading/position rules.
  */
 
 import { describe, it, expect } from "vitest";
 import { buildStagePrompt } from "./prompt.js";
-import { researchSchema, reportSchema } from "./schemas/index.js";
+import { researchSchema, reportSchema, scanForSecrets } from "./schemas/index.js";
 import type { Stage } from "./types.js";
 
 const stage: Stage = {
@@ -147,5 +148,61 @@ Revenue grew strongly in Q3. Margins held above sixty percent.
     });
     expect(r.ok).toBe(false);
     expect(r.ok === false && r.violations.join(" ")).toMatch(/unavailable/);
+  });
+
+  it("rejects report with non-level-2 References heading", () => {
+    const badHeading = goodReport.replace("## References", "### References");
+    const r = reportSchema.validate(badHeading, ctx);
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.violations.join(" ")).toMatch(/## References/);
+  });
+
+  it("rejects report when References is followed by subsequent section heading", () => {
+    const misplaced = `# Q3 Report\n\n## References\n- q3.txt\n- margins.txt\n\n## Future Outlook\nRevenue will grow.\n`;
+    const r = reportSchema.validate(misplaced, ctx);
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.violations.join(" ")).toMatch(/no subsequent headings/);
+  });
+});
+
+describe("redaction fixes: false positive regression & deduplication", () => {
+  it("does not flag ordinary URLs like ep-getting-started-guide", () => {
+    const text = "See https://example.com/docs/ep-getting-started-guide for documentation.";
+    expect(scanForSecrets(text)).toEqual([]);
+  });
+
+  it("does not flag normal English phrase 'the bearer of-the-standard-responsibility-set'", () => {
+    const text = "the bearer of-the-standard-responsibility-set";
+    expect(scanForSecrets(text)).toEqual([]);
+  });
+
+  it("emits one finding per distinct secret credential without collapsing hints", () => {
+    const text = "Key A: sk-11111111111111111111\nKey B: sk-22222222222222222222";
+    const findings = scanForSecrets(text);
+    expect(findings.length).toBe(2);
+  });
+
+  it("collapses duplicate occurrences of the exact same secret credential", () => {
+    const text = "Key A: sk-11111111111111111111\nKey A again: sk-11111111111111111111";
+    const findings = scanForSecrets(text);
+    expect(findings.length).toBe(1);
+  });
+});
+
+describe("research fixes: claim ID uniqueness", () => {
+  it("rejects claims with duplicate IDs", () => {
+    const dupes = JSON.stringify({
+      claims: [
+        { id: "claim-1", text: "Text A", confidence: 0.9, sourceId: "doc1.txt" },
+        { id: "claim-1", text: "Text B", confidence: 0.8, sourceId: "doc1.txt" },
+        { id: "claim-2", text: "Text C", confidence: 0.7, sourceId: "doc1.txt" },
+      ],
+    });
+    const r = researchSchema.validate(dupes, {
+      priorBySchemaId: {},
+      sourceManifest: ["doc1.txt"],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.violations.join(" ")).toMatch(/duplicate claim id/);
   });
 });
