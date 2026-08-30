@@ -39,16 +39,27 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
     if (!live || session.state !== "running") return;
     let active = true;
     void (async () => {
+      const pullEvents = async (): Promise<void> => {
+        const { events: incoming } = await pipelineApi.events(session.id, afterSeq.current);
+        if (!active || !incoming.length) return;
+        afterSeq.current = incoming.at(-1)?.seq ?? afterSeq.current;
+        setEvents((current) => mergeEvents(current, incoming));
+      };
       try {
         while (active) {
           await new Promise((resolve) => window.setTimeout(resolve, 900));
-          const { events: incoming } = await pipelineApi.events(session.id, afterSeq.current);
+          await pullEvents();
           if (!active) return;
-          if (incoming.length) { afterSeq.current = incoming.at(-1)?.seq ?? afterSeq.current; setEvents((current) => mergeEvents(current, incoming)); }
           const { session: refreshed } = await pipelineApi.get(session.id);
           if (!active) return;
           setSession(refreshed as PipelineSession);
-          if (refreshed.state !== "running") return;
+          if (refreshed.state !== "running") {
+            // The coordinator commits the terminal state before it emits the
+            // closing events, so the last stage.completed and session.completed
+            // land after the read above. One more pull or they are lost.
+            await pullEvents();
+            return;
+          }
         }
       } catch (error) { if (active) setNote(error instanceof Error ? "Live updates paused: " + error.message : "Live updates paused."); }
     })();
