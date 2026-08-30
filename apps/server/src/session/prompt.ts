@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Prompt assembly: instruction + schema description + event digest + violations.
  * Owned by W4 (Schemas). See docs/BLUEPRINT.md section 6.3.
  */

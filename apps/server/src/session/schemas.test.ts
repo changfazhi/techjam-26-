@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   createSchemaRegistry,
   reportSchema,
@@ -31,6 +31,13 @@ describe("W4: Credential Redaction Scanner (redaction.ts)", () => {
     expect(findings[0].hint).not.toContain("ep-20240830-xyz987654321");
   });
 
+  it("does not flag ordinary URLs with ep- prefix as Ark endpoint keys", () => {
+    const findings = scanForSecrets(
+      "Refer to documentation at https://example.com/docs/ep-getting-started-guide for more info.",
+    );
+    expect(findings).toEqual([]);
+  });
+
   it("detects sk-* tokens", () => {
     const text = "OpenAI key: sk-abcdefghijklmnopqrstuvwxyz1234567890";
     const findings = scanForSecrets(text);
@@ -46,6 +53,25 @@ describe("W4: Credential Redaction Scanner (redaction.ts)", () => {
     expect(findings[0].kind).toBe("token-like");
   });
 
+  it("does not flag lowercase bearer in ordinary English text", () => {
+    const text = "The individual was the bearer of-the-standard-responsibility-set across the organization.";
+    const findings = scanForSecrets(text);
+    expect(findings).toEqual([]);
+  });
+
+  it("produces distinct findings for distinct leaked credentials", () => {
+    const text = "Key 1: sk-11111111111111111111 and Key 2: sk-22222222222222222222";
+    const findings = scanForSecrets(text);
+    expect(findings.length).toBe(2);
+    expect(findings.every((f) => f.kind === "token-like")).toBe(true);
+  });
+
+  it("produces only one finding for repeated identical credentials", () => {
+    const text = "Duplicate: sk-11111111111111111111 and repeated: sk-11111111111111111111";
+    const findings = scanForSecrets(text);
+    expect(findings.length).toBe(1);
+  });
+
   it("detects private key headers", () => {
     const text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0...";
     const findings = scanForSecrets(text);
@@ -58,6 +84,13 @@ describe("W4: Credential Redaction Scanner (redaction.ts)", () => {
     const findings = scanForSecrets("leaked test-runtime-ark-key-12345 in text");
     expect(findings.length).toBeGreaterThan(0);
     expect(findings.some((f) => f.hint.includes("runtime environment ARK_API_KEY"))).toBe(true);
+    delete process.env.ARK_API_KEY;
+  });
+
+  it("does not flag short process.env.ARK_API_KEY dev values as substring match", () => {
+    process.env.ARK_API_KEY = "devkey";
+    const findings = scanForSecrets("Ordinary text containing devkey substring");
+    expect(findings).toEqual([]);
     delete process.env.ARK_API_KEY;
   });
 });
@@ -105,6 +138,24 @@ describe("W4: Stage 1 Schema (research.ts)", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.violations.some((v) => v.includes("At least 3 claims"))).toBe(true);
+    }
+  });
+
+  it("rejects claims with duplicate claim IDs", () => {
+    const duplicateClaims = {
+      claims: [
+        { id: "claim-1", text: "Claim 1", confidence: 0.9, sourceId: "doc1.txt" },
+        { id: "claim-1", text: "Claim 2 duplicate id", confidence: 0.8, sourceId: "doc1.txt" },
+        { id: "claim-2", text: "Claim 3", confidence: 0.7, sourceId: "doc2.pdf" },
+      ],
+    };
+    const result = researchSchema.validate(JSON.stringify(duplicateClaims), {
+      priorBySchemaId: {},
+      sourceManifest: validManifest,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.violations).toContain('duplicate claim id: "claim-1"');
     }
   });
 
@@ -292,6 +343,61 @@ The company experienced strong financial results and customer acquisition.
       sourceManifest: ["doc1.txt", "doc2.pdf"],
     });
     expect(result.ok).toBe(true);
+  });
+
+  it("rejects report using single-hash '# References' heading (must be level 2 '## References')", () => {
+    const level1Ref = validReport.replace("## References", "# References");
+    const result = reportSchema.validate(level1Ref, {
+      priorBySchemaId: {
+        research: {
+          claims: [
+            { id: "claim-1", text: "Revenue rose.", confidence: 0.9, sourceId: "doc1.txt" },
+          ],
+        },
+        summary: {
+          keyPoints: [
+            { text: "Revenue grew 14% year over year.", citedClaimIds: ["claim-1"] },
+          ],
+        },
+      },
+      sourceManifest: ["doc1.txt", "doc2.pdf"],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.violations.some((v) => v.includes("## References"))).toBe(true);
+    }
+  });
+
+  it("rejects report where '## References' is followed by subsequent section headings", () => {
+    const misplacedRef = `# Q3 Market Performance Report
+
+## References
+- doc1.txt: Financial Statements 2025
+- doc2.pdf: Customer Operations Review
+
+## Key Findings
+- Revenue grew 14% year over year.
+- Customer accounts reached 5 million.
+`;
+    const result = reportSchema.validate(misplacedRef, {
+      priorBySchemaId: {
+        research: {
+          claims: [
+            { id: "claim-1", text: "Revenue rose.", confidence: 0.9, sourceId: "doc1.txt" },
+          ],
+        },
+        summary: {
+          keyPoints: [
+            { text: "Revenue grew 14% year over year.", citedClaimIds: ["claim-1"] },
+          ],
+        },
+      },
+      sourceManifest: ["doc1.txt", "doc2.pdf"],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.violations.some((v) => v.includes("no subsequent headings"))).toBe(true);
+    }
   });
 
   it("rejects a report it cannot trace back to the summary stage", () => {

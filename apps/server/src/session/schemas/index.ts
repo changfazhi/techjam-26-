@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Stage schema registry.
  * Owned by W4 (Schemas). See docs/BLUEPRINT.md section 5.1.
  */

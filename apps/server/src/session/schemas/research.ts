@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Stage schema: research.
  * Owned by W4 (Schemas). See docs/PLAN.md section 2 for the admission rule.
  */
@@ -82,6 +82,24 @@ export const researchSchema: StageSchema = {
       return {
         ok: false,
         violations,
+      };
+    }
+
+    // Enforce claim id uniqueness
+    const seenIds = new Set<string>();
+    const duplicateIds = new Set<string>();
+    for (const claim of result.data.claims) {
+      if (seenIds.has(claim.id)) {
+        duplicateIds.add(claim.id);
+      }
+      seenIds.add(claim.id);
+    }
+    if (duplicateIds.size > 0) {
+      return {
+        ok: false,
+        violations: [
+          `duplicate claim id: ${[...duplicateIds].map((id) => `"${id}"`).join(", ")}`,
+        ],
       };
     }
 
