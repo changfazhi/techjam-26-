@@ -1,49 +1,257 @@
-/* Handoff Gate — pipeline panel styles. Owned by W5. */
-
 .pipeline-panel {
-  border: 1px solid var(--border, #23252b);
-  border-radius: 14px;
-  padding: 20px 22px;
-  margin: 0 0 18px;
-  background: var(--surface, #14161b);
   display: grid;
-  gap: 12px;
+  gap: 16px;
+  max-width: 960px;
+  padding: 20px;
+  color: #eaf2ff;
+  background: #08111f;
+  border: 1px solid #294260;
+  border-radius: 14px;
+  box-shadow: 0 16px 50px rgb(0 0 0 / 35%);
+}
+
+.pipeline-panel-head,
+.pipeline-actions,
+.pipeline-status,
+.stage-title {
+  display: flex;
+  align-items: center;
 }
 
 .pipeline-panel-head {
-  display: flex;
-  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
 
-.pipeline-panel-head h2 {
-  margin: 4px 0 0;
-  font-size: 1.15rem;
-}
-
-.pipeline-panel-head button {
-  background: none;
-  border: none;
-  color: inherit;
-  font-size: 1.4rem;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0.65;
-}
-
-.pipeline-panel-head button:hover,
-.pipeline-panel-head button:focus-visible {
-  opacity: 1;
-}
-
-.pipeline-placeholder {
+.pipeline-panel h2,
+.pipeline-panel h3,
+.pipeline-panel p {
   margin: 0;
-  opacity: 0.75;
-  font-size: 0.92rem;
 }
 
-.pipeline-placeholder-meta {
-  font-size: 0.78rem;
+.pipeline-panel-head p,
+.pipeline-note,
+.pipeline-artifact-chain span,
+.pipeline-artifact-chain time {
+  color: #9eb2c9;
+}
+
+.pipeline-actions {
+  gap: 8px;
+}
+
+.pipeline-actions button {
+  min-height: 32px;
+  padding: 0 11px;
+  color: #eaf2ff;
+  cursor: pointer;
+  background: #15243a;
+  border: 1px solid #405d7d;
+  border-radius: 6px;
+}
+
+.pipeline-actions .pipeline-stop {
+  color: #fff;
+  background: #a42b37;
+  border-color: #d7505d;
+}
+
+.pipeline-actions button:disabled {
+  cursor: not-allowed;
   opacity: 0.5;
+}
+
+.pipeline-status {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pipeline-status span {
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  border: 1px solid #456684;
+  border-radius: 999px;
+}
+
+.pipeline-status .fixture-badge {
+  color: #ffd77d;
+  background: #3d3014;
+  border-color: #806220;
+}
+
+.pipeline-invariant {
+  padding: 10px 12px;
+  color: #a9f6c4;
+  background: #0c2d24;
+  border: 1px solid #227549;
+  border-radius: 8px;
+}
+
+.pipeline-note {
+  padding: 9px 11px;
+  background: #102035;
+  border-left: 3px solid #5e9dd7;
+}
+
+.pipeline-section {
+  padding-top: 4px;
+}
+
+.pipeline-section h3 {
+  margin-bottom: 9px;
+  font-size: 14px;
+}
+
+.pipeline-timeline,
+.pipeline-artifact-chain {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.pipeline-timeline {
+  display: grid;
+  gap: 9px;
+}
+
+.pipeline-stage {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.stage-mark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: #f6d888;
+  background: #412f16;
+  border: 1px solid #9a7225;
+  border-radius: 50%;
+}
+
+.pipeline-stage.admitted .stage-mark {
+  color: #061a10;
+  background: #73e6a1;
+  border-color: #b7ffd1;
+}
+
+.stage-content {
+  min-width: 0;
+  padding: 10px 12px;
+  background: #0e1b2c;
+  border: 1px solid #2c465f;
+  border-radius: 8px;
+}
+
+.stage-title {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stage-title span {
+  color: #9eb2c9;
+  font-size: 13px;
+}
+
+.stage-content p {
+  margin-top: 4px;
+  color: #9eb2c9;
+  font-size: 13px;
+}
+
+.pipeline-violations {
+  margin-top: 8px;
+  color: #ffd4d8;
+}
+
+.pipeline-violations summary {
+  cursor: pointer;
+  color: #ff9da7;
+  font-weight: 700;
+}
+
+.pipeline-violations ul {
+  padding-left: 18px;
+  margin: 7px 0 0;
+}
+
+.pipeline-artifact-chain {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.pipeline-artifact-chain li {
+  position: relative;
+  min-width: 0;
+  padding: 12px;
+  background: #0e1b2c;
+  border: 1px solid #2c465f;
+  border-radius: 8px;
+}
+
+.pipeline-artifact-chain li:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  right: -17px;
+  color: #82b4df;
+  content: "→";
+  transform: translateY(-50%);
+}
+
+.pipeline-artifact-chain strong,
+.pipeline-artifact-chain span,
+.pipeline-artifact-chain time {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.pipeline-artifact-chain span,
+.pipeline-artifact-chain time {
+  margin-top: 5px;
+  font-size: 12px;
+}
+
+.pipeline-artifact-chain details {
+  margin-top: 9px;
+}
+
+.pipeline-artifact-chain summary {
+  cursor: pointer;
+  color: #a7cff4;
+  font-size: 12px;
+}
+
+.pipeline-artifact-chain pre {
+  max-height: 180px;
+  padding: 8px;
+  overflow: auto;
+  color: #d6e9ff;
+  background: #07101c;
+  border-radius: 5px;
+}
+
+@media (max-width: 660px) {
+  .pipeline-panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pipeline-artifact-chain {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .pipeline-artifact-chain li:not(:last-child)::after {
+    top: auto;
+    right: 50%;
+    bottom: -17px;
+    transform: translateX(50%) rotate(90deg);
+  }
 }
