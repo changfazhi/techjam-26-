@@ -79,10 +79,13 @@ export function scanForSecrets(raw: string): RedactionFinding[] {
   const findings: RedactionFinding[] = [];
   const seenMatchedSecrets = new Set<string>();
 
-  // Check if current process.env.ARK_API_KEY is present in raw text
-  // Safer check: require key length >= 16 to avoid short dev key false positives
+  // Check if current process.env.ARK_API_KEY is present in raw text.
+  // The length floor keeps short placeholders from matching ordinary prose as
+  // substrings: "devkey" is 6, and "test-key" — the value agent-service.test.ts
+  // and coordinator.test.ts configure — is 8. Twelve clears both while staying
+  // far below any real Ark key, so a short real key is still protected.
   const envArkKey = process.env.ARK_API_KEY?.trim();
-  if (envArkKey && envArkKey.length >= 16 && raw.includes(envArkKey)) {
+  if (envArkKey && envArkKey.length >= 12 && raw.includes(envArkKey)) {
     seenMatchedSecrets.add(envArkKey);
     findings.push({
       kind: "ark-key",
