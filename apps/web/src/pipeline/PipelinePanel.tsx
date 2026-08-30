@@ -3,7 +3,6 @@ import { pipelineApi } from "../api";
 import type { Artifact, Session, SessionEvent, Stage } from "../types";
 import "./pipeline.css";
 
-type PipelineSession = Omit<Session, "sharedState"> & { sharedState: Session["sharedState"] & { artifactValues?: Record<string, unknown> } };
 const POLL_INTERVAL_MS = 900;
 /** Consecutive failed polls tolerated before live updates give up. */
 const MAX_POLL_FAILURES = 5;
@@ -11,7 +10,7 @@ export interface PipelinePanelProps { agentId: string; onClose: () => void; }
 
 export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
   const afterSeq = useRef(0);
-  const [session, setSession] = useState<PipelineSession>(() => makeFixture(agentId).session);
+  const [session, setSession] = useState<Session>(() => makeFixture(agentId).session);
   const [events, setEvents] = useState<SessionEvent[]>(() => makeFixture(agentId).events);
   const [live, setLive] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -33,7 +32,7 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
         const [{ session: current }, { events: currentEvents }] = await Promise.all([pipelineApi.get(match.id), pipelineApi.events(match.id)]);
         if (!active) return;
         afterSeq.current = currentEvents.at(-1)?.seq ?? 0;
-        setSession(current as PipelineSession); setEvents(currentEvents); setLive(true);
+        setSession(current); setEvents(currentEvents); setLive(true);
       } catch (error) {
         if (active) setNote(error instanceof Error ? "Live data unavailable: " + error.message : "Live data unavailable.");
       }
@@ -59,7 +58,7 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
           if (!active) return;
           const { session: refreshed } = await pipelineApi.get(session.id);
           if (!active) return;
-          setSession(refreshed as PipelineSession);
+          setSession(refreshed);
           if (refreshed.state !== "running") {
             // The coordinator commits the terminal state before it emits the
             // closing events, so the last stage.completed and session.completed
@@ -87,7 +86,7 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
   const stop = async () => {
     if (!live || session.state !== "running") return;
     setStopping(true);
-    try { const { session: stopped } = await pipelineApi.stop(session.id); setSession(stopped as PipelineSession); }
+    try { const { session: stopped } = await pipelineApi.stop(session.id); setSession(stopped); }
     catch (error) { setNote(error instanceof Error ? "Could not stop pipeline: " + error.message : "Could not stop pipeline."); }
     finally { setStopping(false); }
   };
@@ -118,14 +117,14 @@ function StageTimeline({ stages, events, attempts }: { stages: Stage[]; events: 
   })}</ol></section>;
 }
 
-function ArtifactViewer({ stages, artifacts, values }: { stages: Stage[]; artifacts: Record<string, Artifact>; values: Record<string, unknown> | undefined }) {
+function ArtifactViewer({ stages, artifacts, values }: { stages: Stage[]; artifacts: Record<string, Artifact>; values: Record<string, unknown> }) {
   return <section className="pipeline-section"><h3>Artifact chain</h3><ol className="pipeline-artifact-chain">{stages.map((stage) => {
     const artifact = artifacts[stage.id];
-    return <li key={stage.id}><strong>{stage.outputPath}</strong>{artifact ? <><span>Hash: {artifact.hash}</span><time dateTime={artifact.validatedAt}>Validated: {new Date(artifact.validatedAt).toLocaleString()}</time><details><summary>Gate-admitted value</summary><pre>{formatValue(values?.[stage.id])}</pre></details></> : <em>Not admitted - no artifact propagated.</em>}</li>;
+    return <li key={stage.id}><strong>{stage.outputPath}</strong>{artifact ? <><span>Hash: {artifact.hash}</span><time dateTime={artifact.validatedAt}>Validated: {new Date(artifact.validatedAt).toLocaleString()}</time><details><summary>Gate-admitted value</summary><pre>{formatValue(values[stage.id])}</pre></details></> : <em>Not admitted - no artifact propagated.</em>}</li>;
   })}</ol></section>;
 }
 
-function makeFixture(agentId: string): { session: PipelineSession; events: SessionEvent[] } {
+function makeFixture(agentId: string): { session: Session; events: SessionEvent[] } {
   const stages: Stage[] = [stage("research", "Researcher", agentId, "research.json", null), stage("summary", "Summarizer", "fixture-summary", "summary.json", "research.json"), stage("report", "Formatter", "fixture-report", "report.md", "summary.json")];
   const event = (seq: number, type: SessionEvent["type"], stageId: string | null, agent: string | null, attempt: number | null, violations?: string[]): SessionEvent => ({ id: "fixture-" + seq, sessionId: "fixture-session", seq, stageId, agentId: agent, runId: stageId ? "run-" + seq : null, type, attempt, payload: violations ? { violations } : {}, createdAt: "2026-08-30T09:00:0" + Math.min(seq, 9) + ".000Z" });
   const artifacts: Record<string, Artifact> = { research: artifact("research", "research.json", 482, "2026-08-30T09:00:02.000Z"), summary: artifact("summary", "summary.json", 186, "2026-08-30T09:00:05.000Z"), report: artifact("report", "report.md", 319, "2026-08-30T09:00:07.000Z") };
