@@ -92,28 +92,29 @@ export async function sessionRoutes(
     return reply.code(201).send({ session });
   });
 
-  app.get("/api/sessions/:id", async (request) => {
-  const { id } = sessionIdParams.parse(request.params);
-  return { session: deps.sessions.require(id) };
-});
-
-app.post("/api/sessions/:id/start", async (request, reply) => {
-  const { id } = sessionIdParams.parse(request.params);
-  const session = await deps.coordinator.start(id);
-  return reply.code(202).send({ session });
-});
-
-app.post("/api/sessions/:id/stop", async (request) => {
-  const { id } = sessionIdParams.parse(request.params);
-  return { session: await deps.coordinator.stop(id) };
-});
-
-app.get("/api/sessions/:id/events", async (request) => {
-  const { id } = sessionIdParams.parse(request.params);
-  const { after } = eventsQuery.parse(request.query);
-
-  deps.sessions.require(id); // ensures an unknown session is 404
-  return { events: deps.sessions.events(id, after) };
-});
   app.get("/api/sessions", async () => ({ sessions: deps.sessions.list() }));
+
+  app.get("/api/sessions/:id", async (request) => {
+    const { id } = sessionIdParams.parse(request.params);
+    return { session: deps.sessions.require(id) };
+  });
+
+  app.post("/api/sessions/:id/start", async (request, reply) => {
+    const { id } = sessionIdParams.parse(request.params);
+    const session = await deps.coordinator.start(id);
+    return reply.code(202).send({ session });
+  });
+
+  app.post("/api/sessions/:id/stop", async (request) => {
+    const { id } = sessionIdParams.parse(request.params);
+    return { session: await deps.coordinator.stop(id) };
+  });
+
+  app.get("/api/sessions/:id/events", async (request) => {
+    const { id } = sessionIdParams.parse(request.params);
+    const { after } = eventsQuery.parse(request.query);
+
+    deps.sessions.require(id); // ensures an unknown session is 404
+    return { events: deps.sessions.events(id, after) };
+  });
 }

@@ -130,7 +130,10 @@ export async function createApp(
     return { run: service.getRun(id) };
   });
 
-    app.setErrorHandler((error, request, reply) => {
+  // Installed before the session-route plugin registers: a Fastify child scope
+  // inherits the error handler present at registration time, so a handler set
+  // afterwards would not cover those routes. Do not move this below.
+  app.setErrorHandler((error, request, reply) => {
     const appError = error instanceof Error ? error : new Error(String(error));
     const validationError = error instanceof z.ZodError;
     const frameworkStatus =
