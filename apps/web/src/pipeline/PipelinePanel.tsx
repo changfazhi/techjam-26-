@@ -4,6 +4,9 @@ import type { Artifact, Session, SessionEvent, Stage } from "../types";
 import "./pipeline.css";
 
 type PipelineSession = Omit<Session, "sharedState"> & { sharedState: Session["sharedState"] & { artifactValues?: Record<string, unknown> } };
+const POLL_INTERVAL_MS = 900;
+/** Consecutive failed polls tolerated before live updates give up. */
+const MAX_POLL_FAILURES = 5;
 export interface PipelinePanelProps { agentId: string; onClose: () => void; }
 
 export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
@@ -45,9 +48,10 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
         afterSeq.current = incoming.at(-1)?.seq ?? afterSeq.current;
         setEvents((current) => mergeEvents(current, incoming));
       };
-      try {
-        while (active) {
-          await new Promise((resolve) => window.setTimeout(resolve, 900));
+      let failures = 0;
+      while (active) {
+        await new Promise((resolve) => window.setTimeout(resolve, POLL_INTERVAL_MS));
+        try {
           await pullEvents();
           if (!active) return;
           const { session: refreshed } = await pipelineApi.get(session.id);
@@ -60,8 +64,19 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
             await pullEvents();
             return;
           }
+          failures = 0;
+          setNote(null);
+        } catch (error) {
+          if (!active) return;
+          failures += 1;
+          const detail = error instanceof Error ? " " + error.message : "";
+          if (failures >= MAX_POLL_FAILURES) {
+            setNote("Live updates stopped after " + String(failures) + " failed polls." + detail);
+            return;
+          }
+          setNote("Live updates interrupted, retrying." + detail);
         }
-      } catch (error) { if (active) setNote(error instanceof Error ? "Live updates paused: " + error.message : "Live updates paused."); }
+      }
     })();
     return () => { active = false; };
   }, [live, session.id, session.state]);
