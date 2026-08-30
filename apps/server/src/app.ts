@@ -130,25 +130,7 @@ export async function createApp(
     return { run: service.getRun(id) };
   });
 
-  if (sessionDeps) {
-    await app.register(sessionRoutes, sessionDeps);
-  }
-
-  if (config.nodeEnv === "production") {
-    const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));
-    await app.register(fastifyStatic, {
-      root: webRoot,
-      prefix: "/",
-    });
-    app.setNotFoundHandler((request, reply) => {
-      if (request.url.startsWith("/api/")) {
-        return reply.code(404).send({ error: "API route not found" });
-      }
-      return reply.sendFile("index.html");
-    });
-  }
-
-  app.setErrorHandler((error, request, reply) => {
+    app.setErrorHandler((error, request, reply) => {
     const appError = error instanceof Error ? error : new Error(String(error));
     const validationError = error instanceof z.ZodError;
     const frameworkStatus =
@@ -171,6 +153,24 @@ export async function createApp(
       ...(validationError ? { details: error.issues } : {}),
     });
   });
+
+  if (sessionDeps) {
+    await app.register(sessionRoutes, sessionDeps);
+  }
+
+  if (config.nodeEnv === "production") {
+    const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));
+    await app.register(fastifyStatic, {
+      root: webRoot,
+      prefix: "/",
+    });
+    app.setNotFoundHandler((request, reply) => {
+      if (request.url.startsWith("/api/")) {
+        return reply.code(404).send({ error: "API route not found" });
+      }
+      return reply.sendFile("index.html");
+    });
+  }
 
   return app;
 }
