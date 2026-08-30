@@ -41,8 +41,12 @@ const SECRET_PATTERNS: Array<{
     hint: "Artifact contains a secret token (sk-...)",
   },
   {
-    // Authorization Bearer tokens (strictly capitalized Bearer followed by token chars)
-    regex: /\bBearer\s+[a-zA-Z0-9_\-\..]{20,}\b/g,
+    // Authorization Bearer tokens, in any case: HTTP auth schemes are
+    // case-insensitive (RFC 7235) and clients routinely emit "bearer".
+    // The lookahead requires a digit in the token, which every real bearer
+    // credential (JWT, base64) has and hyphenated English prose does not —
+    // that is what keeps "the bearer of-the-standard-responsibility-set" out.
+    regex: /\bbearer\s+(?=[a-zA-Z0-9_\-.]*\d)[a-zA-Z0-9_\-.]{20,}\b/gi,
     kind: "token-like",
     hint: "Artifact contains a Bearer authorization token",
   },

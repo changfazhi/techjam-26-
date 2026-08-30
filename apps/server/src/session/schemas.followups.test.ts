@@ -176,6 +176,24 @@ describe("redaction fixes: false positive regression & deduplication", () => {
     expect(scanForSecrets(text)).toEqual([]);
   });
 
+  it("flags a lowercase bearer token in an Authorization header", () => {
+    const findings = scanForSecrets("authorization: bearer abcdefghijklmnopqrstuvwxyz123");
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.kind).toBe("token-like");
+    expect(findings[0]?.hint).not.toContain("abcdefghijklmnopqrstuvwxyz123");
+  });
+
+  it("flags an uppercase BEARER token", () => {
+    const findings = scanForSecrets("BEARER abcdefghijklmnopqrstuvwxyz123");
+    expect(findings.length).toBe(1);
+  });
+
+  it("still ignores lowercase bearer in ordinary English prose", () => {
+    const text =
+      "The individual was the bearer of-the-standard-responsibility-set across the organization.";
+    expect(scanForSecrets(text)).toEqual([]);
+  });
+
   it("emits one finding per distinct secret credential without collapsing hints", () => {
     const text = "Key A: sk-11111111111111111111\nKey B: sk-22222222222222222222";
     const findings = scanForSecrets(text);
