@@ -78,7 +78,7 @@ Requirements:
     // Every key point must appear in the body. Fails closed: if the summary
     // artifact is not available in parsed form there is nothing to trace the
     // report back to, and an unverifiable report is not an admissible one.
-    const summary = asSummary(context.priorArtifacts?.["summary"]);
+    const summary = asSummary(context.priorBySchemaId?.["summary"]);
     if (!summary) {
       violations.push(
         "cannot verify key point coverage: stage 2 summary artifact unavailable",
@@ -101,7 +101,7 @@ Requirements:
     // Every source behind a cited claim must appear in the References section.
     // Needs both prior artifacts: summary supplies the cited claim ids, research
     // maps those ids to source documents.
-    const research = asResearch(context.priorArtifacts?.["research"]);
+    const research = asResearch(context.priorBySchemaId?.["research"]);
     if (summary && !research) {
       violations.push(
         "cannot verify source coverage: stage 1 research artifact unavailable",

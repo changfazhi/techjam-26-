@@ -74,6 +74,38 @@ describe("SessionStore", () => {
     expect(sessions.get(session.id)?.title).toBe("Provenance run");
   });
 
+  it("rejects a pipeline whose stages share a schemaId", async () => {
+    const { sessions } = await makeStore();
+    await expect(
+      sessions.create(
+        input({
+          stages: [
+            {
+              id: "first-pass",
+              role: "Researcher",
+              agentId: "agent-a",
+              schemaId: "research",
+              outputPath: "research.json",
+              inputFileName: null,
+              instruction: "Extract claims.",
+            },
+            {
+              id: "second-pass",
+              role: "Researcher",
+              agentId: "agent-b",
+              schemaId: "research",
+              outputPath: "research.json",
+              inputFileName: null,
+              instruction: "Extract more claims.",
+            },
+          ],
+        }),
+      ),
+      // Prior artifacts resolve by schemaId, so the second stage's artifact
+      // would silently replace the first's rather than failing closed.
+    ).rejects.toThrow(/both use schemaId "research"/);
+  });
+
   it("assigns gapless sequence numbers scoped to one session", async () => {
     const { sessions } = await makeStore();
     const first = await sessions.create(input());
