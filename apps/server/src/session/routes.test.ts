@@ -119,6 +119,19 @@ describe("session routes", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it("rejects a create-session request with no seeded sources", async () => {
+    const { app, create } = await makeHarness();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { ...createInput, sources: [] },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("returns 404 when a create-session stage references an unknown agent", async () => {
     const { app, getAgent, seed, create } = await makeHarness();
     getAgent.mockImplementation(() => {
