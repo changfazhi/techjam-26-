@@ -1,9 +1,11 @@
 /**
- * Fastify plugin: the five session routes.
+ * Fastify plugin: the six session routes.
  * Owned by W3 (API). See docs/BLUEPRINT.md section 5.5.
  *
- * STUB — W3 implements. Registered once from app.ts; app.ts is frozen after the
- * foundation commit, so every route change happens in this file.
+ * Registered once from app.ts, so every route change happens in this file.
+ * Validation failures raise ZodError and missing records raise HttpError; both
+ * are mapped to status codes by the error handler app.ts installs before this
+ * plugin registers.
  */
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
@@ -69,13 +71,6 @@ export async function sessionRoutes(
   app: FastifyInstance,
   deps: SessionRouteDeps,
 ): Promise<void> {
-  // W3: replace with the five documented routes.
-  // POST   /api/sessions
-  // GET    /api/sessions
-  // GET    /api/sessions/:id
-  // POST   /api/sessions/:id/start
-  // POST   /api/sessions/:id/stop
-  // GET    /api/sessions/:id/events?after=<seq>
   app.post("/api/sessions", async (request, reply) => {
     const input = createSessionBody.parse(request.body);
 
