@@ -256,6 +256,11 @@ export class SessionCoordinator {
     // INVARIANT 5 and 6: the only place artifacts and version are written.
     await this.deps.sessions.update(sessionId, (current) => {
       current.sharedState.artifacts[stage.id] = artifact;
+      // The value the gate actually admitted. Later stages validate against
+      // this, never against the workspace's current contents.
+      // Tolerates sessions persisted before this field existed.
+      current.sharedState.artifactValues ??= {};
+      current.sharedState.artifactValues[stage.id] = validation.value;
       current.sharedState.currentStageIndex = stageIndex + 1;
       current.version += 1;
     });
@@ -339,11 +344,23 @@ export class SessionCoordinator {
     }
   }
 
+  /**
+   * ValidationContext.priorArtifacts, which schemas/index.ts documents as
+   * "stageId -> the parsed artifact admitted for that stage".
+   *
+   * This previously returned the Artifact metadata records instead, so a schema
+   * reaching for admitted content (summary.ts for stage 1's claim ids,
+   * report.ts for stage 2's key points) found undefined and, failing closed,
+   * rejected every input. Sessions could never get past stage 2.
+   */
   private priorArtifacts(sessionId: string): Record<string, unknown> {
     const session = this.deps.sessions.require(sessionId);
+    const values = session.sharedState.artifactValues ?? {};
     const result: Record<string, unknown> = {};
-    for (const [stageId, artifact] of Object.entries(session.sharedState.artifacts)) {
-      result[stageId] = artifact;
+    for (const stageId of Object.keys(session.sharedState.artifacts)) {
+      if (stageId in values) {
+        result[stageId] = values[stageId];
+      }
     }
     return result;
   }

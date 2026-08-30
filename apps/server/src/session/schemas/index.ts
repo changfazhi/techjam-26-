@@ -1,9 +1,16 @@
-/**
+﻿/**
  * Stage schema registry.
  * Owned by W4 (Schemas). See docs/BLUEPRINT.md section 5.1.
- *
- * STUB — signatures are frozen; implementations belong to W4.
  */
+
+import { researchSchema } from "./research.js";
+import { summarySchema } from "./summary.js";
+import { reportSchema } from "./report.js";
+
+export * from "./redaction.js";
+export * from "./research.js";
+export * from "./summary.js";
+export * from "./report.js";
 
 export interface ValidationContext {
   /** stageId -> the parsed artifact admitted for that stage. */
@@ -48,7 +55,11 @@ export class StaticSchemaRegistry implements SchemaRegistry {
   }
 }
 
-/** Populated by W4 as the three stage schemas land. */
+/** Populated by W4 with all three stage schemas. */
 export function createSchemaRegistry(): StaticSchemaRegistry {
-  return new StaticSchemaRegistry();
+  const registry = new StaticSchemaRegistry();
+  registry.register(researchSchema);
+  registry.register(summarySchema);
+  registry.register(reportSchema);
+  return registry;
 }

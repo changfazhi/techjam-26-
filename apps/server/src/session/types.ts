@@ -55,8 +55,17 @@ export interface Artifact {
 /** The only state the coordinator advances. Guarded by Session.version. */
 export interface SharedState {
   currentStageIndex: number;
-  /** stageId -> Artifact. */
+  /** stageId -> Artifact. Metadata only: path, hash, size. */
   artifacts: Record<string, Artifact>;
+  /**
+   * stageId -> the parsed value the stage's schema admitted, which is what
+   * ValidationContext.priorArtifacts hands to later stages. Captured at
+   * admission rather than re-read from disk: an artifact may legitimately
+   * arrive in the agent's reply rather than as a file, and re-reading would
+   * also validate against whatever the workspace holds now instead of what
+   * was actually admitted.
+   */
+  artifactValues: Record<string, unknown>;
   /** stageId -> attempts consumed. */
   attempts: Record<string, number>;
 }
