@@ -13,8 +13,15 @@ export * from "./summary.js";
 export * from "./report.js";
 
 export interface ValidationContext {
-  /** stageId -> the parsed artifact admitted for that stage. */
-  priorArtifacts: Record<string, unknown>;
+  /**
+   * schemaId -> the parsed artifact admitted by the stage that used that schema.
+   *
+   * Keyed by schemaId rather than stage id: a schema knows which upstream
+   * *shape* it depends on, never what a particular pipeline chose to call the
+   * stage producing it. If a pipeline reuses a schema across two stages, the
+   * later-admitted artifact wins.
+   */
+  priorBySchemaId: Record<string, unknown>;
   /** Filenames seeded into the first stage's workspace. */
   sourceManifest: string[];
 }

@@ -33,6 +33,25 @@ export class SessionStore {
       instruction: stage.instruction,
       maxAttempts: stage.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
     }));
+
+    // ValidationContext.priorBySchemaId is keyed by schemaId, so two stages
+    // sharing one would let the later admitted artifact silently replace the
+    // earlier under the same key -- a downstream schema would then validate
+    // against the wrong stage's data and admit it. Unlike a missing key, that
+    // does not fail closed, so reject the pipeline instead of tolerating it.
+    const schemaIdOwner = new Map<string, string>();
+    for (const stage of stages) {
+      const owner = schemaIdOwner.get(stage.schemaId);
+      if (owner !== undefined) {
+        throw new HttpError(
+          400,
+          `stages "${owner}" and "${stage.id}" both use schemaId "${stage.schemaId}"; ` +
+            "prior artifacts are resolved by schemaId, so each stage needs its own",
+        );
+      }
+      schemaIdOwner.set(stage.schemaId, stage.id);
+    }
+
     const session: Session = {
       id: randomUUID(),
       title: input.title.trim(),

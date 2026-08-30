@@ -239,7 +239,7 @@ export class SessionCoordinator {
     }
 
     const validation = schema.validate(collected.raw, {
-      priorArtifacts: this.priorArtifacts(sessionId),
+      priorBySchemaId: this.priorBySchemaId(sessionId),
       sourceManifest: session.sourceManifest,
     });
     if (!validation.ok) {
@@ -345,21 +345,24 @@ export class SessionCoordinator {
   }
 
   /**
-   * ValidationContext.priorArtifacts, which schemas/index.ts documents as
-   * "stageId -> the parsed artifact admitted for that stage".
+   * ValidationContext.priorBySchemaId, which schemas/index.ts documents as
+   * "schemaId -> the parsed artifact admitted by the stage that used that schema".
    *
    * This previously returned the Artifact metadata records instead, so a schema
    * reaching for admitted content (summary.ts for stage 1's claim ids,
    * report.ts for stage 2's key points) found undefined and, failing closed,
    * rejected every input. Sessions could never get past stage 2.
    */
-  private priorArtifacts(sessionId: string): Record<string, unknown> {
+  private priorBySchemaId(sessionId: string): Record<string, unknown> {
     const session = this.deps.sessions.require(sessionId);
     const values = session.sharedState.artifactValues ?? {};
     const result: Record<string, unknown> = {};
-    for (const stageId of Object.keys(session.sharedState.artifacts)) {
-      if (stageId in values) {
-        result[stageId] = values[stageId];
+    // sharedState is keyed by stage id, but a schema depends on an upstream
+    // shape, not on this pipeline's naming. Walking stages in order also means
+    // a reused schema resolves to its most recently admitted artifact.
+    for (const stage of session.stages) {
+      if (stage.id in values) {
+        result[stage.schemaId] = values[stage.id];
       }
     }
     return result;

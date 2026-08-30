@@ -55,7 +55,7 @@ describe("fix 4: provenance fails closed on an empty manifest", () => {
 
   it("rejects unverifiable claims when no sources were seeded", () => {
     const result = researchSchema.validate(claims, {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: [],
     });
     expect(result.ok).toBe(false);
@@ -64,7 +64,7 @@ describe("fix 4: provenance fails closed on an empty manifest", () => {
 
   it("still admits claims whose sourceId is in a real manifest", () => {
     const result = researchSchema.validate(claims, {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: ["totally-made-up.txt"],
     });
     expect(result.ok).toBe(true);
@@ -84,7 +84,7 @@ describe("fix 2: stage-3 admission rule", () => {
       { text: "Margins held above sixty percent.", citedClaimIds: ["claim-2"] },
     ],
   };
-  const ctx = { priorArtifacts: { research, summary }, sourceManifest: ["q3.txt", "margins.txt"] };
+  const ctx = { priorBySchemaId: { research, summary }, sourceManifest: ["q3.txt", "margins.txt"] };
 
   const goodReport = `# Q3 Report
 
@@ -139,7 +139,7 @@ Revenue grew strongly in Q3. Margins held above sixty percent.
 
   it("fails closed when the summary artifact is unavailable (Blocker 1 seam)", () => {
     const r = reportSchema.validate(goodReport, {
-      priorArtifacts: {
+      priorBySchemaId: {
         research: { stageId: "research", path: "/w/research.json", hash: "a", bytes: 1, validatedAt: "" },
         summary: { stageId: "summary", path: "/w/summary.json", hash: "b", bytes: 1, validatedAt: "" },
       },

@@ -253,8 +253,15 @@ published (day 1), a signature change requires telling the whole team.
 // apps/server/src/session/schemas/index.ts
 
 export interface ValidationContext {
-  /** stageId -> the parsed artifact admitted for that stage. */
-  priorArtifacts: Record<string, unknown>;
+  /**
+   * schemaId -> the parsed artifact admitted by the stage that used that schema.
+   *
+   * Keyed by schemaId rather than stage id: a schema knows which upstream
+   * *shape* it depends on, never what a particular pipeline chose to call the
+   * stage producing it. SessionStore.create rejects two stages sharing a
+   * schemaId, so this key is never ambiguous.
+   */
+  priorBySchemaId: Record<string, unknown>;
   /** Filenames seeded into stage 1's workspace. */
   sourceManifest: string[];
 }

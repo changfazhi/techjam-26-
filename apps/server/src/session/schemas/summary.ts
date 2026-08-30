@@ -83,7 +83,7 @@ export const summarySchema: StageSchema = {
     }
 
     // Citation Gate: verify cited claim IDs against stage 1 research
-    const priorResearch = context.priorArtifacts?.["research"] as
+    const priorResearch = context.priorBySchemaId?.["research"] as
       | { claims?: Array<{ id?: string }> }
       | undefined;
 
