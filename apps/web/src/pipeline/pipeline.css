@@ -108,6 +108,15 @@
   border-radius: 8px;
 }
 
+.pipeline-error {
+  padding: 9px 11px;
+  color: #ffd4d8;
+  background: #2d1014;
+  border: 1px solid #a42b37;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
 .pipeline-note {
   padding: 9px 11px;
   background: #102035;
