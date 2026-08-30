@@ -163,6 +163,25 @@
   border-radius: 50%;
 }
 
+.pipeline-stage.running .stage-mark {
+  color: #cfe6ff;
+  background: #123353;
+  border-color: #5e9dd7;
+  animation: pipeline-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pipeline-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-stage.running .stage-mark {
+    animation: none;
+  }
+}
+
 .pipeline-stage.admitted .stage-mark {
   color: #061a10;
   background: #73e6a1;

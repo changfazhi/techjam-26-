@@ -108,8 +108,13 @@ function StageTimeline({ stages, events, attempts }: { stages: Stage[]; events: 
     const stageEvents = events.filter((event) => event.stageId === stage.id);
     const held = stageEvents.filter((event) => event.type === "stage.rejected" || event.type === "stage.timeout");
     const admitted = stageEvents.some((event) => event.type === "stage.completed");
+    // Events arrive ordered by seq, so the newest one decides: a stage whose
+    // last word was stage.assigned is dispatched and still in flight.
+    const running = !admitted && stageEvents.at(-1)?.type === "stage.assigned";
+    const state = admitted ? "admitted" : running ? "running" : held.length ? "held" : "waiting";
+    const label = admitted ? "Admitted" : running ? "Running" : held.length ? "Held" : "Waiting";
     const count = Math.max(attempts[stage.id] ?? 0, ...stageEvents.map((event) => event.attempt ?? 0));
-    return <li className={"pipeline-stage " + (admitted ? "admitted" : held.length ? "held" : "waiting")} key={stage.id}><span className="stage-mark">{admitted ? "\u2713" : index + 1}</span><div className="stage-content"><div className="stage-title"><div><small>{stage.role}</small><h4>{stage.id}</h4></div><span>{count} attempt{count === 1 ? "" : "s"} - {admitted ? "Admitted" : held.length ? "Held" : "Waiting"}</span></div>{held.length > 0 && <details className="pipeline-violations" open><summary>Held on attempt {held.map((event) => event.attempt ?? "?").join(", ")}</summary><ul>{held.flatMap((event) => (event.payload.violations ?? []).map((violation) => <li key={event.id + violation}>{violation}</li>))}</ul></details>}</div></li>;
+    return <li className={"pipeline-stage " + state} key={stage.id}><span className="stage-mark">{admitted ? "\u2713" : index + 1}</span><div className="stage-content"><div className="stage-title"><div><small>{stage.role}</small><h4>{stage.id}</h4></div><span>{count} attempt{count === 1 ? "" : "s"} - {label}</span></div>{held.length > 0 && <details className="pipeline-violations" open><summary>Held on attempt {held.map((event) => event.attempt ?? "?").join(", ")}</summary><ul>{held.flatMap((event) => (event.payload.violations ?? []).map((violation) => <li key={event.id + violation}>{violation}</li>))}</ul></details>}</div></li>;
   })}</ol></section>;
 }
 
