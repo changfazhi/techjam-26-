@@ -20,15 +20,25 @@ const service = new AgentService(config, store, workspaces, runner);
 await service.initialize();
 
 const sessions = new SessionStore(store);
+const broker = new FileArtifactBroker();
+const workspacePathFor = (agentId: string) =>
+  workspaces.workspacePath(agentId);
+
 const coordinator = new SessionCoordinator({
   agents: service,
   sessions,
   schemas: createSchemaRegistry(),
-  broker: new FileArtifactBroker(),
-  workspacePathFor: (agentId) => workspaces.workspacePath(agentId),
+  broker,
+  workspacePathFor,
 });
 
-const app = await createApp(config, service, { sessions, coordinator });
+const app = await createApp(config, service, {
+  sessions,
+  coordinator,
+  agents: service,
+  broker,
+  workspacePathFor,
+});
 
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, "Shutting down");
