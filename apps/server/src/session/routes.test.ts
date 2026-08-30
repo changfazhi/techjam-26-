@@ -106,6 +106,20 @@ describe("session routes", () => {
     expect(create).toHaveBeenCalledWith(createInput);
   });
 
+  it("does not seed the workspace when session creation is rejected", async () => {
+    const { app, create, seed } = await makeHarness();
+    create.mockRejectedValueOnce(new HttpError(400, "duplicate schemaId"));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: createInput,
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(seed).not.toHaveBeenCalled();
+  });
+
   it("rejects an invalid create-session body", async () => {
     const { app, create } = await makeHarness();
 

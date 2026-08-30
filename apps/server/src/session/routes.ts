@@ -87,9 +87,13 @@ export async function sessionRoutes(
     if (!firstStage) {
       throw new Error("Session must contain a stage");
     }
+
+    // Create before seeding. create() still rejects pipelines zod cannot judge
+    // — two stages sharing a schemaId, for one — and seeding first would leave
+    // the caller's source files in the agent's workspace behind a 400.
+    const session = await deps.sessions.create(input);
     await deps.broker.seed(deps.workspacePathFor(firstStage.agentId), input.sources);
 
-    const session = await deps.sessions.create(input);
     return reply.code(201).send({ session });
   });
 
