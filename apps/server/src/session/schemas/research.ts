@@ -85,25 +85,36 @@ export const researchSchema: StageSchema = {
       };
     }
 
-    // Validate sourceId provenance against sourceManifest
-    if (context.sourceManifest && context.sourceManifest.length > 0) {
-      const allowedSources = new Set(context.sourceManifest);
-      const invalidSources = [
-        ...new Set(
-          result.data.claims
-            .map((c) => c.sourceId)
-            .filter((sourceId) => !allowedSources.has(sourceId)),
-        ),
-      ];
+    // Validate sourceId provenance against sourceManifest.
+    // Fail closed: an absent or empty manifest means nothing can be provenanced,
+    // so every claim is unverifiable rather than trivially verified. Skipping the
+    // check here would admit claims citing documents that were never seeded.
+    const manifest = context.sourceManifest ?? [];
+    if (manifest.length === 0) {
+      return {
+        ok: false,
+        violations: [
+          "no seeded sources to check provenance against: every claim's sourceId is unverifiable",
+        ],
+      };
+    }
 
-      if (invalidSources.length > 0) {
-        return {
-          ok: false,
-          violations: [
-            `unknown sourceId: ${invalidSources.map((s) => `"${s}"`).join(", ")}. Allowed sources: ${context.sourceManifest.map((s) => `"${s}"`).join(", ")}`,
-          ],
-        };
-      }
+    const allowedSources = new Set(manifest);
+    const invalidSources = [
+      ...new Set(
+        result.data.claims
+          .map((c) => c.sourceId)
+          .filter((sourceId) => !allowedSources.has(sourceId)),
+      ),
+    ];
+
+    if (invalidSources.length > 0) {
+      return {
+        ok: false,
+        violations: [
+          `unknown sourceId: ${invalidSources.map((s) => `"${s}"`).join(", ")}. Allowed sources: ${manifest.map((s) => `"${s}"`).join(", ")}`,
+        ],
+      };
     }
 
     return {
