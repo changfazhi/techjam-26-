@@ -7,6 +7,8 @@
  */
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
+import type { AgentService } from "../agent-service.js";
+import type { ArtifactBroker } from "./broker.js";
 import type { SessionCoordinator } from "./coordinator.js";
 import type { SessionStore } from "./session-store.js";
 
@@ -20,6 +22,9 @@ const eventsQuery = z.object({
 export interface SessionRouteDeps {
   sessions: SessionStore;
   coordinator: SessionCoordinator;
+  agents: Pick<AgentService, "getAgent">;
+  broker: Pick<ArtifactBroker, "seed">;
+  workspacePathFor(agentId: string): string;
 }
 
 export async function sessionRoutes(

@@ -4,6 +4,7 @@ import { createApp } from "../app.js";
 import type { AgentService } from "../agent-service.js";
 import { loadConfig } from "../config.js";
 import { HttpError } from "../errors.js";
+import type { ArtifactBroker } from "./broker.js";
 import type { SessionCoordinator } from "./coordinator.js";
 import type { SessionStore } from "./session-store.js";
 import type { Session, SessionEvent } from "./types.js";
@@ -51,9 +52,14 @@ async function makeHarness() {
   const sessions = { list, require, events } as unknown as SessionStore;
   const coordinator = { start, stop } as unknown as SessionCoordinator;
   const service = {} as AgentService;
+  const agents = { getAgent: vi.fn() } as Pick<AgentService, "getAgent">;
+  const broker = { seed: vi.fn(async () => undefined) } as Pick<ArtifactBroker, "seed">;
   const app = await createApp(loadConfig({ NODE_ENV: "test" }), service, {
     sessions,
     coordinator,
+    agents,
+    broker,
+    workspacePathFor: (agentId) => `/workspaces/${agentId}`,
   });
   apps.push(app);
 
