@@ -16,11 +16,11 @@ here.
 
 | # | Workstream | Owner | Owns these paths **exclusively** |
 |---|---|---|---|
-| **W1** | Foundation & data | | `apps/server/src/session/types.ts`, `apps/server/src/session/session-store.ts`, plus **all shared-file edits** |
-| **W2** | Coordinator & broker | | `apps/server/src/session/coordinator.ts`, `broker.ts`, `coordinator.test.ts` |
-| **W3** | API & routes | | `apps/server/src/session/routes.ts`, `routes.test.ts` |
-| **W4** | Schemas & prompts | | `apps/server/src/session/schemas/**`, `session/prompt.ts`, `schemas.test.ts` |
-| **W5** | Runtime & UI | | `apps/server/src/mock-runner.ts`, `apps/web/src/pipeline/**` |
+| **W1** | Foundation & data | Sean | `apps/server/src/session/types.ts`, `apps/server/src/session/session-store.ts`, plus **all shared-file edits** |
+| **W2** | Coordinator & broker | Fazhi | `apps/server/src/session/coordinator.ts`, `broker.ts`, `coordinator.test.ts` |
+| **W3** | API & routes | Zuhan | `apps/server/src/session/routes.ts`, `routes.test.ts` |
+| **W4** | Schemas & prompts | Zach | `apps/server/src/session/schemas/**`, `session/prompt.ts`, `schemas.test.ts` |
+| **W5** | Runtime & UI | Adam | `apps/server/src/mock-runner.ts`, `apps/web/src/pipeline/**` |
 
 **Rule:** if you need a change in a file you do not own, ask the owner. Do not edit it, not
 even a one-line import. This single rule prevents roughly all of the conflicts.

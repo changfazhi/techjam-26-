@@ -171,8 +171,14 @@ export interface Artifact {
 export interface SharedState {
   currentStageIndex: number;
   artifacts: Record<string, Artifact>;   // stageId -> Artifact
+  artifactValues: Record<string, unknown>; // stageId -> parsed value admitted by its schema
   attempts: Record<string, number>;      // stageId -> attempts consumed
 }
+
+// `artifactValues` stores the parsed value admitted by each stage's schema. It is
+// captured during the same guarded update as the artifact metadata so later stages
+// validate against exactly what was admitted. Coordinator reads tolerate this
+// field being absent in sessions persisted before it was introduced.
 
 export interface Session {
   id: string;
