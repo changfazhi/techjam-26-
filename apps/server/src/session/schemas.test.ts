@@ -74,7 +74,7 @@ describe("W4: Stage 1 Schema (research.ts)", () => {
 
   it("admits valid research output matching schema and source manifest", () => {
     const result = researchSchema.validate(JSON.stringify(validResearch), {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: validManifest,
     });
     expect(result.ok).toBe(true);
@@ -82,7 +82,7 @@ describe("W4: Stage 1 Schema (research.ts)", () => {
 
   it("never throws on invalid JSON syntax", () => {
     const result = researchSchema.validate("invalid { json [", {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: validManifest,
     });
     expect(result.ok).toBe(false);
@@ -99,7 +99,7 @@ describe("W4: Stage 1 Schema (research.ts)", () => {
       ],
     };
     const result = researchSchema.validate(JSON.stringify(invalid), {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: validManifest,
     });
     expect(result.ok).toBe(false);
@@ -117,7 +117,7 @@ describe("W4: Stage 1 Schema (research.ts)", () => {
       ],
     };
     const result = researchSchema.validate(JSON.stringify(invalid), {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: validManifest,
     });
     expect(result.ok).toBe(false);
@@ -135,7 +135,7 @@ describe("W4: Stage 1 Schema (research.ts)", () => {
       ],
     };
     const result = researchSchema.validate(JSON.stringify(invalid), {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: validManifest,
     });
     expect(result.ok).toBe(false);
@@ -153,7 +153,7 @@ describe("W4: Stage 1 Schema (research.ts)", () => {
       ],
     };
     const result = researchSchema.validate(JSON.stringify(withSecret), {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: validManifest,
     });
     expect(result.ok).toBe(false);
@@ -186,7 +186,7 @@ describe("W4: Stage 2 Schema — Citation Gate (summary.ts)", () => {
       ],
     };
     const result = summarySchema.validate(JSON.stringify(validSummary), {
-      priorArtifacts: { research: stage1Research },
+      priorBySchemaId: { research: stage1Research },
       sourceManifest: ["doc1.txt", "doc2.pdf"],
     });
     expect(result.ok).toBe(true);
@@ -199,7 +199,7 @@ describe("W4: Stage 2 Schema — Citation Gate (summary.ts)", () => {
       ],
     };
     const result = summarySchema.validate(JSON.stringify(hallucinatedSummary), {
-      priorArtifacts: { research: stage1Research },
+      priorBySchemaId: { research: stage1Research },
       sourceManifest: ["doc1.txt", "doc2.pdf"],
     });
     expect(result.ok).toBe(false);
@@ -216,7 +216,7 @@ describe("W4: Stage 2 Schema — Citation Gate (summary.ts)", () => {
       ],
     };
     const result = summarySchema.validate(JSON.stringify(badSummary), {
-      priorArtifacts: { research: stage1Research },
+      priorBySchemaId: { research: stage1Research },
       sourceManifest: ["doc1.txt", "doc2.pdf"],
     });
     expect(result.ok).toBe(false);
@@ -232,7 +232,7 @@ describe("W4: Stage 2 Schema — Citation Gate (summary.ts)", () => {
       ],
     };
     const result = summarySchema.validate(JSON.stringify(emptyCitation), {
-      priorArtifacts: { research: stage1Research },
+      priorBySchemaId: { research: stage1Research },
       sourceManifest: ["doc1.txt", "doc2.pdf"],
     });
     expect(result.ok).toBe(false);
@@ -248,7 +248,7 @@ describe("W4: Stage 2 Schema — Citation Gate (summary.ts)", () => {
       ],
     };
     const result = summarySchema.validate(JSON.stringify(withSecret), {
-      priorArtifacts: { research: stage1Research },
+      priorBySchemaId: { research: stage1Research },
       sourceManifest: ["doc1.txt", "doc2.pdf"],
     });
     expect(result.ok).toBe(false);
@@ -277,7 +277,7 @@ The company experienced strong financial results and customer acquisition.
     const result = reportSchema.validate(validReport, {
       // Stage 3 now traces the report back to the admitted stage 1 and 2
       // artifacts, so both must be supplied for a report to be admissible.
-      priorArtifacts: {
+      priorBySchemaId: {
         research: {
           claims: [
             { id: "claim-1", text: "Revenue rose.", confidence: 0.9, sourceId: "doc1.txt" },
@@ -296,7 +296,7 @@ The company experienced strong financial results and customer acquisition.
 
   it("rejects a report it cannot trace back to the summary stage", () => {
     const result = reportSchema.validate(validReport, {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: ["doc1.txt", "doc2.pdf"],
     });
     expect(result.ok).toBe(false);
@@ -307,7 +307,7 @@ The company experienced strong financial results and customer acquisition.
 
   it("rejects empty or whitespace report", () => {
     const result = reportSchema.validate("   \n\n  ", {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: [],
     });
     expect(result.ok).toBe(false);
@@ -319,7 +319,7 @@ The company experienced strong financial results and customer acquisition.
   it("rejects report missing a References section", () => {
     const noRef = `# Report Title\n\nSome body text without any reference section.`;
     const result = reportSchema.validate(noRef, {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: [],
     });
     expect(result.ok).toBe(false);
@@ -331,7 +331,7 @@ The company experienced strong financial results and customer acquisition.
   it("rejects report exceeding 8,000 characters", () => {
     const largeReport = `# Large Report\n\n${"A".repeat(8100)}\n\n## References\n- doc1.txt`;
     const result = reportSchema.validate(largeReport, {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: [],
     });
     expect(result.ok).toBe(false);
@@ -343,7 +343,7 @@ The company experienced strong financial results and customer acquisition.
   it("rejects report with leaked credentials", () => {
     const secretReport = `# Report\n\nKey is sk-12345678901234567890abcdef\n\n## References\n- doc1.txt`;
     const result = reportSchema.validate(secretReport, {
-      priorArtifacts: {},
+      priorBySchemaId: {},
       sourceManifest: [],
     });
     expect(result.ok).toBe(false);

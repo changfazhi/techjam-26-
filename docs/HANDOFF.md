@@ -41,8 +41,12 @@ inspection passes, which means the submission's central claim is unproven.
   into the retry prompt, so write them as instructions a model can act on:
   `"cited claims not in stage 1: claim-99"`, not `"validation failed"`.
 
-`context.priorArtifacts` gives you the earlier stages' admitted artifacts, keyed by stage id.
-That is how stage 2 reaches stage 1's claim ids.
+`context.priorBySchemaId` gives you the earlier stages' admitted artifacts, keyed by **schema
+id** (`"research"`, `"summary"`) — not by the producing stage's `Stage.id`. That is how stage 2
+reaches stage 1's claim ids: by which schema validated the artifact, not by whatever a given
+pipeline happens to name that stage. `Stage` carries both ids and they are free to differ;
+`SharedState` stays keyed by stage id, and the coordinator re-keys at the one seam where a
+schema consumes it.
 
 The admission rules are in [`PLAN.md`](./PLAN.md) §2. The stage-2 rule is the one that matters.
 

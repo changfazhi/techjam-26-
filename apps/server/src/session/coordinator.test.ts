@@ -570,6 +570,34 @@ describe("SessionCoordinator + the real schema registry", () => {
     expect(finished.sharedState.artifacts["research"]?.hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("resolves prior artifacts when stage ids differ from their schema ids", async () => {
+    const harness = await makeHarness();
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    scriptAll(harness, { researcher: researcher.id, summarizer: summarizer.id, formatter: formatter.id });
+
+    // Every other fixture in this repo sets id === schemaId, which is the only
+    // reason a schema can look up a prior artifact by a literal key. Rename the
+    // stages and nothing about the pipeline changes -- a schema depends on the
+    // upstream *shape*, never on what this pipeline called that stage.
+    const base = threeStageInput(researcher.id, summarizer.id, formatter.id);
+    const renamed: CreateSessionInput = {
+      ...base,
+      stages: base.stages.map((stage, index) => ({
+        ...stage,
+        id: `s${index + 1}`,
+      })),
+    };
+
+    const session = await harness.sessions.create(renamed);
+    await coordinatorFor(harness, { schemas: createSchemaRegistry() }).start(session.id);
+    await expect
+      .poll(() => harness.sessions.get(session.id)?.state, { timeout: 5_000 })
+      .toBe("completed");
+
+    const finished = harness.sessions.require(session.id);
+    expect(Object.keys(finished.sharedState.artifacts).sort()).toEqual(["s1", "s2", "s3"]);
+  });
+
   it("holds the summary stage when a citation resolves to no admitted claim", async () => {
     const harness = await makeHarness();
     const { researcher, summarizer, formatter } = await threeAgents(harness);

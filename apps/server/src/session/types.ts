@@ -58,8 +58,9 @@ export interface SharedState {
   /** stageId -> Artifact. Metadata only: path, hash, size. */
   artifacts: Record<string, Artifact>;
   /**
-   * stageId -> the parsed value the stage's schema admitted, which is what
-   * ValidationContext.priorArtifacts hands to later stages. Captured at
+   * stageId -> the parsed value the stage's schema admitted. The coordinator
+   * re-keys these by schemaId to build ValidationContext.priorBySchemaId for
+   * later stages; this map stays keyed by stage id. Captured at
    * admission rather than re-read from disk: an artifact may legitimately
    * arrive in the agent's reply rather than as a file, and re-reading would
    * also validate against whatever the workspace holds now instead of what
