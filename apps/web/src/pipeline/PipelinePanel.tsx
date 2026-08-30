@@ -179,10 +179,14 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
         events={events}
         attempts={session.sharedState.attempts}
       />
+      {/*
+        A session persisted before artifactValues existed arrives without the
+        field; the coordinator tolerates that the same way (coordinator.ts:358).
+      */}
       <ArtifactViewer
         stages={session.stages}
         artifacts={session.sharedState.artifacts}
-        values={session.sharedState.artifactValues}
+        values={session.sharedState.artifactValues ?? {}}
       />
     </section>
   );
