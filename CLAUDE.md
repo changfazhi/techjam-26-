@@ -41,7 +41,7 @@ it has ever run.
 | Pipeline UI | **Done, fixture-backed** — `apps/web/src/pipeline/PipelinePanel.tsx`. Its live paths (polling, terminal-event pull, Stop) became reachable only when the routes landed and **have never been exercised against a real session** |
 | Baseline acceptance test | **Never run.** `.data/`, `workspaces/`, `codex-home/` are empty; no real model call has ever been made |
 
-`npm run check` on `main` passes: 111 tests, both typechecks, both production builds.
+`npm run check` on `main` passes: the full test suite, both typechecks, both production builds.
 
 ### What is actually left
 
