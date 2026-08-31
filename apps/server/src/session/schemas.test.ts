@@ -47,7 +47,7 @@ describe("W4: Credential Redaction Scanner (redaction.ts)", () => {
   });
 
   it("detects Bearer authorization tokens", () => {
-    const text = "Header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+    const text = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
     const findings = scanForSecrets(text);
     expect(findings.length).toBe(1);
     expect(findings[0].kind).toBe("token-like");
