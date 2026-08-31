@@ -38,6 +38,7 @@
 
 .pipeline-actions {
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .pipeline-status {
@@ -53,6 +54,26 @@
   color: var(--muted);
   border: 1px solid var(--line);
   border-radius: 999px;
+}
+
+.pipeline-session-picker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pipeline-session-picker select {
+  min-width: 260px;
+  max-width: 420px;
+  padding: 6px 9px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 7px;
 }
 
 /* The fixture must never be mistaken for a live run. */
@@ -270,6 +291,16 @@
   .pipeline-panel-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .pipeline-session-picker {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .pipeline-session-picker select {
+    min-width: 0;
+    width: 100%;
   }
 
   .pipeline-artifact-chain {

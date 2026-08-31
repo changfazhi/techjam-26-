@@ -38,7 +38,7 @@ it has ever run.
 | Stage schemas and the citation gate | **Done** — `session/schemas/*.ts`, including the cross-cutting credential scan in `redaction.ts` |
 | Prompt assembly | **Done** — `session/prompt.ts` |
 | HTTP routes | **Done** — all six in `session/routes.ts`, 18 tests in `routes.test.ts` |
-| Pipeline UI | **Done, fixture-backed** — `apps/web/src/pipeline/PipelinePanel.tsx`. Its live paths (polling, terminal-event pull, Stop) became reachable only when the routes landed and **have never been exercised against a real session** |
+| Pipeline UI | **Done, live-backed** — `apps/web/src/pipeline/PipelinePanel.tsx` can create/start the seeded demo, poll events and terminal state, stop a run, and switch between persisted sessions. The fixture remains an explicitly labelled fallback. The live path has been exercised end to end with `RUNTIME_PROVIDER=mock`; the real runner still needs rehearsal. |
 | Baseline acceptance test | **Never run.** `.data/`, `workspaces/`, `codex-home/` are empty; no real model call has ever been made |
 
 `npm run check` on `main` passes: the full test suite, both typechecks, both production builds.
@@ -48,13 +48,15 @@ it has ever run.
 The risk has moved from "unwritten" to "unverified". In rough order of how likely each is to
 surprise you:
 
-1. **No end-to-end run has ever happened.** Whether a real Codex agent writes to `outputPath` in
-   a form `FileArtifactBroker` collects, and whether a real model clears the schemas inside
-   `maxAttempts`, are both untested assumptions. `scripts/demo-pipeline.sh` drives the whole API
-   for this; it has never been run and is referenced from no npm script or doc.
-2. **The panel's live paths.** Everything visible today is the demo fixture. A panel showing the
-   fixture is deliberately marked (dashed border, watermark, "not live data" badge) — if you see
-   that during a demo, the routes did not answer.
+1. **No real-runner end-to-end run has happened.** Mock runs now prove the complete API and UI
+   data path, including a held citation and successful retry. Whether a real Codex agent writes
+   to `outputPath` in a form `FileArtifactBroker` collects, and whether a real model clears the
+   schemas inside `maxAttempts`, remain untested assumptions. `npm run demo` drives the same API
+   without the UI and is useful for seeding a pre-run session.
+2. **The panel still needs a judge-machine visual rehearsal.** Its production bundle, live API
+   flow, polling data, session switching, and rejection/retry sequence have been exercised. A
+   panel showing the dashed, watermarked "not live data" fixture during judging means no persisted
+   session was selected; use **Start live demo** or select one from the Session control.
 3. **UI module split.** BLUEPRINT §3 lists `StageTimeline.tsx`, `ArtifactViewer.tsx` and
    `usePipeline.ts`. The first two exist as functions inside `PipelinePanel.tsx`; the hook was
    never extracted and polling lives in inline `useEffect`s. Cosmetic against the blueprint's
