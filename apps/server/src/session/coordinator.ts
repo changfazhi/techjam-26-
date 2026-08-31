@@ -23,7 +23,16 @@ import type { Artifact, Session, SessionEventType, Stage } from "./types.js";
 type StageResult = { outcome: "ADMIT" } | { outcome: "HOLD"; violations: string[] };
 
 const DEFAULT_POLL_INTERVAL_MS = 500;
-const DEFAULT_STAGE_TIMEOUT_MS = 90_000;
+/**
+ * One stage attempt against a real container is a fresh container plus a long
+ * generation with file I/O — PLAN.md section 6 budgets 60 to 120 seconds. The
+ * old 90s default sat inside that range, so a merely slow stage was cancelled
+ * and held, and with maxAttempts 2 a session could fail on timing alone while
+ * saying nothing about whether the schemas were satisfiable. Five minutes
+ * leaves headroom for the slow end without letting a truly hung stage sit
+ * forever; tests inject their own value and are unaffected.
+ */
+const DEFAULT_STAGE_TIMEOUT_MS = 300_000;
 
 export interface CoordinatorDeps {
   agents: AgentService;
