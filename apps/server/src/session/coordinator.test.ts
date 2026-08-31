@@ -167,6 +167,8 @@ function coordinatorFor(
     broker: new FileArtifactBroker(),
     workspacePathFor: (agentId) => harness.workspaces.workspacePath(agentId),
     pollIntervalMs: 5,
+    // Retry immediately; the backoff has its own tests below.
+    retryBackoffMs: 0,
     buildPrompt: (input) =>
       input.stage.instruction +
       (input.violations.length ? "\nFix: " + input.violations.join("; ") : ""),
@@ -430,6 +432,71 @@ describe("SessionCoordinator — a held stage never propagates", () => {
     expect(finished.sharedState.artifacts["research"]?.hash).toMatch(/^[0-9a-f]{64}$/);
     expect(finished.sharedState.artifacts["summary"]).toBeUndefined();
   });
+
+  // A real Ark run returned 429, the retry went out 1 ms later, drew the same
+  // 429, and the session was dead in 1.5 seconds. The gap is what stops a
+  // transient upstream fault from spending the whole budget instantly.
+  it("waits between attempts instead of re-dispatching immediately", async () => {
+    const harness = await makeHarness();
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    harness.scripted.set(summarizer.id, [
+      { write: { fileName: "summary.json", content: HALLUCINATED_SUMMARY } },
+    ]);
+
+    const session = await harness.sessions.create(
+      threeStageInput(researcher.id, summarizer.id, formatter.id),
+    );
+    await coordinatorFor(harness, {
+      retryBackoffMs: 150,
+      schemas: schemasThat((schemaId, raw, call) =>
+        schemaId === "summary"
+          ? { ok: false, violations: ["cited claims not in stage 1: claim-99"] }
+          : acceptDefault(schemaId, raw, call),
+      ),
+    }).start(session.id);
+
+    await expect
+      .poll(() => harness.sessions.get(session.id)?.state, { timeout: 5_000 })
+      .toBe("failed");
+
+    const attempts = harness.sessions
+      .events(session.id)
+      .filter((event) => event.stageId === "summary" && event.type === "stage.assigned");
+    expect(attempts).toHaveLength(2);
+
+    const gapMs =
+      new Date(attempts[1]!.createdAt).getTime() - new Date(attempts[0]!.createdAt).getTime();
+    expect(gapMs).toBeGreaterThanOrEqual(150);
+  });
+
+  it("does not wait after the final attempt, which has nothing left to retry", async () => {
+    const harness = await makeHarness();
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    harness.scripted.set(summarizer.id, [
+      { write: { fileName: "summary.json", content: HALLUCINATED_SUMMARY } },
+    ]);
+
+    const session = await harness.sessions.create(
+      threeStageInput(researcher.id, summarizer.id, formatter.id),
+    );
+    // One backoff of 300ms sits between the two attempts; a second one after
+    // the last attempt would push this past the budget below.
+    const startedAt = Date.now();
+    await coordinatorFor(harness, {
+      retryBackoffMs: 300,
+      schemas: schemasThat((schemaId, raw, call) =>
+        schemaId === "summary"
+          ? { ok: false, violations: ["cited claims not in stage 1: claim-99"] }
+          : acceptDefault(schemaId, raw, call),
+      ),
+    }).start(session.id);
+
+    await expect
+      .poll(() => harness.sessions.get(session.id)?.state, { timeout: 5_000 })
+      .toBe("failed");
+
+    expect(Date.now() - startedAt).toBeLessThan(600 + 1_500);
+  });
 });
 
 describe("SessionCoordinator — recovery and control", () => {
@@ -473,6 +540,49 @@ describe("SessionCoordinator — recovery and control", () => {
     expect(stopped.state).toBe("stopped");
     expect(coordinator.isRunning(session.id)).toBe(false);
     expect(harness.service.getAgent(researcher.id).status).toBe("ready");
+  });
+
+  // The backoff must not turn stop() into a wait for the full pause: an
+  // operator cancelling a run must not see the session sit there looking hung.
+  it("abandons a pending retry backoff as soon as a stop lands", async () => {
+    const harness = await makeHarness();
+    const { researcher, summarizer, formatter } = await threeAgents(harness);
+    harness.scripted.set(summarizer.id, [
+      { write: { fileName: "summary.json", content: HALLUCINATED_SUMMARY } },
+    ]);
+
+    const session = await harness.sessions.create(
+      threeStageInput(researcher.id, summarizer.id, formatter.id),
+    );
+    const coordinator = coordinatorFor(harness, {
+      // Far longer than the assertion below allows, so passing by waiting it
+      // out is not possible.
+      retryBackoffMs: 30_000,
+      schemas: schemasThat((schemaId, raw, call) =>
+        schemaId === "summary"
+          ? { ok: false, violations: ["cited claims not in stage 1: claim-99"] }
+          : acceptDefault(schemaId, raw, call),
+      ),
+    });
+
+    await coordinator.start(session.id);
+    // Wait until the summary has been held and the backoff is running.
+    await expect
+      .poll(
+        () =>
+          harness.sessions
+            .events(session.id)
+            .some((event) => event.type === "stage.rejected" && event.stageId === "summary"),
+        { timeout: 5_000 },
+      )
+      .toBe(true);
+
+    const startedAt = Date.now();
+    const stopped = await coordinator.stop(session.id);
+
+    expect(stopped.state).toBe("stopped");
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+    expect(coordinator.isRunning(session.id)).toBe(false);
   });
 });
 
