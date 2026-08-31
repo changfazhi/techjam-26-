@@ -238,6 +238,121 @@ describe("redaction fixes: false positive regression & deduplication", () => {
   });
 });
 
+describe("redaction fixes: reviewer regression cases (Bearer, ep-*, ARK_API_KEY)", () => {
+  describe("Bearer tokens: case-insensitivity and Authorization header context", () => {
+    const validToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+
+    it("detects Authorization: Bearer <token>", () => {
+      const text = `Authorization: Bearer ${validToken}`;
+      const findings = scanForSecrets(text);
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.kind).toBe("token-like");
+    });
+
+    it("detects authorization: bearer <token>", () => {
+      const text = `authorization: bearer ${validToken}`;
+      const findings = scanForSecrets(text);
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.kind).toBe("token-like");
+    });
+
+    it("detects AUTHORIZATION: BEARER <token>", () => {
+      const text = `AUTHORIZATION: BEARER ${validToken}`;
+      const findings = scanForSecrets(text);
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.kind).toBe("token-like");
+    });
+
+    it("detects Authorization: bearer <token>", () => {
+      const text = `Authorization: bearer ${validToken}`;
+      const findings = scanForSecrets(text);
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.kind).toBe("token-like");
+    });
+
+    it("does not flag prose containing 'the bearer of-the-standard-responsibility-set'", () => {
+      const text = "the bearer of-the-standard-responsibility-set";
+      expect(scanForSecrets(text)).toEqual([]);
+    });
+  });
+
+  describe("ep-* endpoint IDs: broad pattern matching while allowing URLs", () => {
+    it("detects timestamp + suffix endpoint ID: ep-20240830123456-abcde", () => {
+      const findings = scanForSecrets("endpoint: ep-20240830123456-abcde");
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.kind).toBe("ark-key");
+    });
+
+    it("detects model endpoint ID: ep-m-20240830123456", () => {
+      const findings = scanForSecrets("endpoint: ep-m-20240830123456");
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.kind).toBe("ark-key");
+    });
+
+    it("detects alphanumeric resource endpoint ID: ep-abcdefghijkl", () => {
+      const findings = scanForSecrets("endpoint: ep-abcdefghijkl");
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.kind).toBe("ark-key");
+    });
+
+    it("detects hyphenated date endpoint ID: ep-2024-0830-abcde", () => {
+      const findings = scanForSecrets("endpoint: ep-2024-0830-abcde");
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.kind).toBe("ark-key");
+    });
+
+    it("detects timestamp + random id: ep-20240830-xyz987654321", () => {
+      const findings = scanForSecrets("Connecting to endpoint ep-20240830-xyz987654321");
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.kind).toBe("ark-key");
+    });
+
+    it("does not flag documentation URL https://example.com/docs/ep-getting-started-guide", () => {
+      const findings = scanForSecrets("Documentation: https://example.com/docs/ep-getting-started-guide");
+      expect(findings).toEqual([]);
+    });
+
+    it("does not flag documentation URL with trailing text", () => {
+      const findings = scanForSecrets(
+        "Refer to documentation at https://example.com/docs/ep-getting-started-guide for more info.",
+      );
+      expect(findings).toEqual([]);
+    });
+  });
+
+  describe("ARK_API_KEY: protecting shorter real keys while ignoring short dev values", () => {
+    it("detects runtime process.env.ARK_API_KEY with minimum length 8", () => {
+      process.env.ARK_API_KEY = "12345678";
+      const findings = scanForSecrets("Artifact containing 12345678 leaked key");
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.kind).toBe("ark-key");
+      delete process.env.ARK_API_KEY;
+    });
+
+    it("detects runtime process.env.ARK_API_KEY with 10 characters", () => {
+      process.env.ARK_API_KEY = "ark-key-8c";
+      const findings = scanForSecrets("Leaked ark-key-8c in artifact");
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.kind).toBe("ark-key");
+      delete process.env.ARK_API_KEY;
+    });
+
+    it("does not flag short generic dev values (<8 chars) like 'devkey'", () => {
+      process.env.ARK_API_KEY = "devkey";
+      const findings = scanForSecrets("Ordinary text containing devkey substring");
+      expect(findings).toEqual([]);
+      delete process.env.ARK_API_KEY;
+    });
+
+    it("detects explicit ARK_API_KEY assignment of length 8", () => {
+      const text = "ARK_API_KEY = 'key-1234'";
+      const findings = scanForSecrets(text);
+      expect(findings.length).toBe(1);
+      expect(findings[0]?.kind).toBe("ark-key");
+    });
+  });
+});
+
 describe("research fixes: claim ID uniqueness", () => {
   it("rejects claims with duplicate IDs", () => {
     const dupes = JSON.stringify({
