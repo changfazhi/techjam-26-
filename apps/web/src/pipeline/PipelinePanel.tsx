@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { pipelineApi } from "../api";
-import type { Artifact, Session, SessionEvent, Stage } from "../types";
+import { api, pipelineApi } from "../api";
+import type { Agent, Artifact, Session, SessionEvent, Stage } from "../types";
 import "./pipeline.css";
 
 const POLL_INTERVAL_MS = 900;
@@ -18,8 +18,10 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
   const fixture = useMemo(() => makeFixture(agentId), [agentId]);
   const [session, setSession] = useState<Session>(fixture.session);
   const [events, setEvents] = useState<SessionEvent[]>(fixture.events);
+  const [availableSessions, setAvailableSessions] = useState<Session[]>([]);
   const [live, setLive] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
 
   useEffect(() => {
@@ -27,15 +29,19 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
     afterSeq.current = fixture.events.at(-1)?.seq ?? 0;
     setSession(fixture.session);
     setEvents(fixture.events);
+    setAvailableSessions([]);
     setLive(false);
     setNote(null);
 
     void (async () => {
       try {
         const { sessions } = await pipelineApi.list();
-        const match = sessions
+        const matches = sessions
           .filter((item) => item.stages.some((stage) => stage.agentId === agentId))
-          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        const match = matches[0];
+
+        if (active) setAvailableSessions(matches);
 
         if (!match) {
           if (active) setNote("No pipeline session found for agent " + agentId + ".");
@@ -135,6 +141,79 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
     }
   };
 
+  const selectSession = async (sessionId: string) => {
+    if (!sessionId) {
+      afterSeq.current = fixture.events.at(-1)?.seq ?? 0;
+      setSession(fixture.session);
+      setEvents(fixture.events);
+      setLive(false);
+      setNote("Showing the built-in walkthrough, not persisted data.");
+      return;
+    }
+
+    setNote("Loading the selected live session...");
+    try {
+      const [{ session: selected }, { events: selectedEvents }] = await Promise.all([
+        pipelineApi.get(sessionId),
+        pipelineApi.events(sessionId),
+      ]);
+      afterSeq.current = selectedEvents.at(-1)?.seq ?? 0;
+      setSession(selected);
+      setEvents(selectedEvents);
+      setLive(true);
+      setNote(null);
+    } catch (error) {
+      setNote(
+        error instanceof Error
+          ? "Could not load the selected session: " + error.message
+          : "Could not load the selected session.",
+      );
+    }
+  };
+
+  const startDemo = async () => {
+    if (starting || session.state === "running") return;
+    setStarting(true);
+    setNote("Preparing a live three-agent session...");
+
+    try {
+      const { agents } = await api.listAgents();
+      const researcher = await ensureDemoAgent("Researcher", agents, agentId);
+      const summarizer = await ensureDemoAgent("Summarizer", agents);
+      const formatter = await ensureDemoAgent("Formatter", agents);
+
+      for (const agent of [researcher, summarizer, formatter]) {
+        if (agent.status === "busy") {
+          throw new Error(agent.name + " is already running another task.");
+        }
+        if (agent.status === "stopped") await api.startAgent(agent.id);
+      }
+
+      const { session: created } = await pipelineApi.create(
+        demoSessionInput(researcher.id, summarizer.id, formatter.id),
+      );
+      const { session: running } = await pipelineApi.start(created.id);
+
+      afterSeq.current = 0;
+      setEvents([]);
+      setSession(running);
+      setAvailableSessions((current) => [
+        running,
+        ...current.filter((item) => item.id !== running.id),
+      ]);
+      setLive(true);
+      setNote("Live demo started. Events and admitted artifacts update automatically.");
+    } catch (error) {
+      setNote(
+        error instanceof Error
+          ? "Could not start the live demo: " + error.message
+          : "Could not start the live demo.",
+      );
+    } finally {
+      setStarting(false);
+    }
+  };
+
   return (
     <section
       className={"pipeline-panel" + (live ? "" : " is-fixture")}
@@ -147,6 +226,14 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
           <p>{session.title}</p>
         </div>
         <div className="pipeline-actions">
+          <button
+            className="button button-primary"
+            type="button"
+            onClick={startDemo}
+            disabled={starting || session.state === "running"}
+          >
+            {starting ? "Starting..." : live ? "New live demo" : "Start live demo"}
+          </button>
           <button
             className="button button-danger"
             type="button"
@@ -165,6 +252,22 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
         <strong>{session.state}</strong>
         <span>{session.version} / {session.stages.length} admitted</span>
         {!live && <span className="fixture-badge">Demo fixture &mdash; not live data</span>}
+        {availableSessions.length > 0 && (
+          <label className="pipeline-session-picker">
+            Session
+            <select
+              value={live ? session.id : ""}
+              onChange={(event) => void selectSession(event.target.value)}
+            >
+              <option value="">Built-in walkthrough</option>
+              {availableSessions.map((item) => (
+                <option value={item.id} key={item.id}>
+                  {item.title} - {item.state} - {new Date(item.createdAt).toLocaleTimeString()}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {session.error && <p className="pipeline-error" role="alert">{session.error}</p>}
@@ -292,6 +395,84 @@ function ArtifactViewer({
       </ol>
     </section>
   );
+}
+
+async function ensureDemoAgent(
+  role: "Researcher" | "Summarizer" | "Formatter",
+  agents: Agent[],
+  preferredId?: string,
+): Promise<Agent> {
+  const preferred = preferredId
+    ? agents.find(
+        (agent) => agent.id === preferredId && agent.name.toLowerCase() === role.toLowerCase(),
+      )
+    : undefined;
+  const existing = preferred ?? agents.find(
+    (agent) => agent.name.toLowerCase() === role.toLowerCase(),
+  );
+  if (existing) return existing;
+
+  const { agent } = await api.createAgent({
+    name: role,
+    description: "Handoff Gate " + role + " stage",
+    instructions: "Act as the " + role + " stage of the Handoff Gate pipeline.",
+  });
+  agents.push(agent);
+  return agent;
+}
+
+function demoSessionInput(
+  researcherId: string,
+  summarizerId: string,
+  formatterId: string,
+) {
+  return {
+    title: "Battery recycling provenance demo",
+    topic: "What can be recovered from lithium-ion batteries?",
+    sources: [
+      {
+        name: "recycling-notes.md",
+        content: "# Recycling notes\nLithium-ion battery recycling can recover lithium and nickel.",
+      },
+      {
+        name: "safety-notes.md",
+        content: "# Safety notes\nRecovering materials requires controlled processing.",
+      },
+      {
+        name: "market-notes.md",
+        content: "# Market notes\nRecycled materials can reduce demand for virgin extraction.",
+      },
+    ],
+    stages: [
+      {
+        id: "research",
+        role: "Researcher",
+        agentId: researcherId,
+        schemaId: "research",
+        outputPath: "research.json",
+        inputFileName: null,
+        instruction: "Extract sourced claims from the seeded documents.",
+      },
+      {
+        id: "summary",
+        role: "Summarizer",
+        agentId: summarizerId,
+        schemaId: "summary",
+        outputPath: "summary.json",
+        inputFileName: "research.json",
+        instruction: "Write cited key points using only the supplied claims.",
+      },
+      {
+        id: "report",
+        role: "Formatter",
+        agentId: formatterId,
+        schemaId: "report",
+        outputPath: "report.md",
+        inputFileName: "summary.json",
+        instruction: "Format the cited key points as a concise Markdown report.",
+      },
+    ],
+  };
 }
 
 function makeFixture(agentId: string): { session: Session; events: SessionEvent[] } {
