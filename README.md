@@ -174,6 +174,22 @@ AGENT_WORKSPACE_ROOT=workspaces
 CODEX_HOME=codex-home
 ```
 
+### Run the Handoff Gate pipeline
+
+With the server up, drive all three stages (Researcher → Summarizer → Formatter) end to end:
+
+```bash
+npm run demo
+```
+
+It creates the three stage Agents, seeds the source documents, starts the session, and prints
+the event log until the session reaches `completed` or `failed`. Set `RUNTIME_PROVIDER=mock` in
+`.env` to rehearse the whole pipeline in about a second with no container engine and no Ark
+call; set `BASE_URL` if the API is not on `http://localhost:3000`.
+
+A stage that fails its schema is *held*, not passed on — the run then shows `stage.rejected`
+with the violation that caused it, which is the behaviour worth demonstrating.
+
 ## Deployment
 
 - [Existing Linux ECS with Docker](docs/DEPLOYMENT.md#existing-linux-ecs)
