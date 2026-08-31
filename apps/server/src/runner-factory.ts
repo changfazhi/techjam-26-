@@ -6,7 +6,9 @@ import type { AgentRunner } from "./types.js";
 
 export function createRunner(config: AppConfig): AgentRunner {
   if (config.runtimeProvider === "mock") {
-    return new MockRunner();
+    return new MockRunner({
+      misbehaviour: config.mockMisbehaviour,
+    });
   }
   return config.runtimeProvider === "container"
     ? new ContainerCodexRunner(config)

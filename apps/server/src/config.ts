@@ -18,6 +18,14 @@ const envSchema = z.object({
   RUNTIME_PROVIDER: z
     .enum(["local-process", "container", "mock"])
     .default("local-process"),
+  MOCK_MISBEHAVIOUR: z
+    .enum([
+      "NONE",
+      "WRONG_CITATION",
+      "NO_FILE_WRITTEN",
+      "HANG_PAST_DEADLINE",
+    ])
+    .default("NONE"),
   CONTAINER_ENGINE: z.string().min(1).default("docker"),
   CONTAINER_RUNTIME_IMAGE: z.string().min(1).default("volc-agent-runtime:local"),
   CONTAINER_CPU_LIMIT: z.coerce.number().positive().default(2),
@@ -78,6 +86,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     codexTimeoutMs: env.CODEX_TIMEOUT_MS,
     codexMaxOutputBytes: env.CODEX_MAX_OUTPUT_BYTES,
     runtimeProvider: env.RUNTIME_PROVIDER,
+    mockMisbehaviour: env.MOCK_MISBEHAVIOUR,
     containerEngine: env.CONTAINER_ENGINE,
     containerRuntimeImage: env.CONTAINER_RUNTIME_IMAGE,
     containerCpuLimit: env.CONTAINER_CPU_LIMIT,
