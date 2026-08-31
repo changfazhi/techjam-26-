@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildStagePrompt } from "./prompt.js";
+import { buildStagePrompt, SOURCE_MANIFEST_HEADING } from "./prompt.js";
 import { researchSchema, reportSchema, scanForSecrets } from "./schemas/index.js";
 import type { Stage } from "./types.js";
 
@@ -42,6 +42,45 @@ describe("fix 1: prompt carries stage.instruction", () => {
       violations: [],
     });
     expect(prompt).not.toContain("## Your task");
+  });
+});
+
+describe("prompt carries the seeded source manifest", () => {
+  const base = {
+    stage,
+    schemaDescription: "{...}",
+    priorEvents: [],
+    inputContents: null,
+    violations: [],
+  };
+
+  // Stage 1 has no input file, so without this section the prompt never names a
+  // single seeded filename — yet every schema demands the exact filename as a
+  // sourceId. That mismatch failed all three attempts of the first real run.
+  it("names every seeded source under the manifest heading", () => {
+    const prompt = buildStagePrompt({
+      ...base,
+      sourceManifest: ["recycling-notes.md", "safety-notes.md"],
+    });
+    expect(prompt).toContain(SOURCE_MANIFEST_HEADING);
+    expect(prompt).toContain("- recycling-notes.md");
+    expect(prompt).toContain("- safety-notes.md");
+  });
+
+  it("omits the section entirely when no sources were seeded", () => {
+    expect(buildStagePrompt({ ...base, sourceManifest: [] })).not.toContain(
+      SOURCE_MANIFEST_HEADING,
+    );
+    expect(buildStagePrompt(base)).not.toContain(SOURCE_MANIFEST_HEADING);
+  });
+
+  it("ignores blank entries rather than emitting an empty bullet", () => {
+    const prompt = buildStagePrompt({
+      ...base,
+      sourceManifest: ["  ", "recycling-notes.md"],
+    });
+    expect(prompt).toContain("- recycling-notes.md");
+    expect(prompt).not.toContain("- \n");
   });
 });
 

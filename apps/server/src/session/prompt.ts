@@ -15,13 +15,24 @@ export interface PromptInput {
   inputContents: string | null;
   /** Violations from the previous attempt; empty on the first attempt. */
   violations: string[];
+  /**
+   * Names of the source documents seeded into the session, used to name the
+   * only sourceIds a stage may claim. Optional for the same reason
+   * stage.instruction is: sessions rehydrate from .data/launchpad.json and may
+   * predate the field.
+   */
+  sourceManifest?: string[] | undefined;
 }
+
+/** Section header for the seeded source list, also parsed by MockRunner. */
+export const SOURCE_MANIFEST_HEADING = "## Available source documents";
 
 /**
  * Builds an LLM-actionable prompt string for the given stage attempt.
  */
 export function buildStagePrompt(input: PromptInput): string {
-  const { stage, schemaDescription, priorEvents, inputContents, violations } = input;
+  const { stage, schemaDescription, priorEvents, inputContents, violations, sourceManifest } =
+    input;
 
   const sections: string[] = [];
 
@@ -38,6 +49,20 @@ export function buildStagePrompt(input: PromptInput): string {
   const instruction = (stage.instruction ?? "").trim();
   if (instruction.length > 0) {
     sections.push(`## Your task\n${instruction}`);
+  }
+
+  // The seeded source documents, named. Every schema that carries provenance
+  // asks for the "exact filename of the seeded source document", and stage 1
+  // has no input file, so without this section nothing in the prompt ever says
+  // what those filenames are — the agent has to guess and the gate fails it.
+  const sources = (sourceManifest ?? []).map((name) => name.trim()).filter((name) => name.length > 0);
+  if (sources.length > 0) {
+    sections.push(
+      SOURCE_MANIFEST_HEADING +
+        "\n" +
+        "These files are seeded in your workspace. A `sourceId` MUST be exactly one of these names:\n" +
+        sources.map((name) => "- " + name).join("\n"),
+    );
   }
 
   // Required output specification

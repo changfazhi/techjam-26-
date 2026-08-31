@@ -1,19 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Drives the Handoff Gate API for the live demo. Start the application first,
-# then supply the three pre-created Agent ids:
+# Drives the Handoff Gate API for the live demo. Start the application first
+# (`npm run dev`, or `npm run poc` for containers), then:
+#
+#   npm run demo
+#
+# The three stage Agents are created for you. To reuse Agents you already have,
+# supply their UUIDs instead:
 #
 # RESEARCHER_AGENT_ID=... SUMMARIZER_AGENT_ID=... FORMATTER_AGENT_ID=... \
 #   ./scripts/demo-pipeline.sh
 #
 # Optional: BASE_URL=http://localhost:3000 APP_AUTH_TOKEN=... POLL_INTERVAL=2
+#
+# RUNTIME_PROVIDER=mock on the server runs the whole pipeline with no container
+# engine and no Ark call, which is the fast way to rehearse.
 
 base_url="${BASE_URL:-http://localhost:3000}"
 poll_interval="${POLL_INTERVAL:-2}"
-researcher_id="${RESEARCHER_AGENT_ID:?Set RESEARCHER_AGENT_ID to the Researcher Agent UUID.}"
-summarizer_id="${SUMMARIZER_AGENT_ID:?Set SUMMARIZER_AGENT_ID to the Summarizer Agent UUID.}"
-formatter_id="${FORMATTER_AGENT_ID:?Set FORMATTER_AGENT_ID to the Formatter Agent UUID.}"
 
 headers=(-H "content-type: application/json")
 if [[ -n "${APP_AUTH_TOKEN:-}" ]]; then
@@ -23,6 +28,44 @@ fi
 api() {
   curl --silent --show-error --fail-with-body "${headers[@]}" "$@"
 }
+
+read_json_field() {
+  node -e '
+    let raw = "";
+    process.stdin.on("data", (chunk) => { raw += chunk; });
+    process.stdin.on("end", () => {
+      const value = process.argv[1]
+        .split(".")
+        .reduce((node, key) => (node == null ? node : node[key]), JSON.parse(raw));
+      if (value === undefined || value === null) process.exit(1);
+      process.stdout.write(String(value));
+    });
+  ' "$1"
+}
+
+# Creates an Agent and prints its id, so a first-time run needs no setup.
+create_agent() {
+  local role="$1"
+  api -X POST "$base_url/api/agents" --data "{
+    \"name\": \"$role\",
+    \"description\": \"Handoff Gate $role stage\",
+    \"instructions\": \"Act as the $role stage of the Handoff Gate pipeline.\"
+  }" | read_json_field "agent.id"
+}
+
+researcher_id="${RESEARCHER_AGENT_ID:-}"
+summarizer_id="${SUMMARIZER_AGENT_ID:-}"
+formatter_id="${FORMATTER_AGENT_ID:-}"
+
+if [[ -z "$researcher_id" || -z "$summarizer_id" || -z "$formatter_id" ]]; then
+  echo "Creating the three stage agents..."
+  researcher_id="${researcher_id:-$(create_agent Researcher)}"
+  summarizer_id="${summarizer_id:-$(create_agent Summarizer)}"
+  formatter_id="${formatter_id:-$(create_agent Formatter)}"
+  echo "Researcher: $researcher_id"
+  echo "Summarizer: $summarizer_id"
+  echo "Formatter:  $formatter_id"
+fi
 
 payload="$({
   RESEARCHER_AGENT_ID="$researcher_id" \
@@ -81,15 +124,7 @@ payload="$({
 
 echo "Creating pipeline session..."
 session_json="$(api -X POST "$base_url/api/sessions" --data "$payload")"
-session_id="$(printf '%s' "$session_json" | node -e '
-  let raw = "";
-  process.stdin.on("data", (chunk) => { raw += chunk; });
-  process.stdin.on("end", () => {
-    const id = JSON.parse(raw).session?.id;
-    if (!id) process.exit(1);
-    process.stdout.write(id);
-  });
-')"
+session_id="$(printf '%s' "$session_json" | read_json_field "session.id")"
 
 echo "Created session: $session_id"
 echo "Starting pipeline..."
