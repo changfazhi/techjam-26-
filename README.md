@@ -1,71 +1,118 @@
-# Volc Agent Launchpad
+# Handoff Gate — TechJam 2026
 
-A minimal Agent platform for three-day middleware hackathons. It provides Agent
-CRUD, a browser Playground, persistent workspaces, and Codex CLI backed by the
-Volcengine Ark Responses API.
+Handoff Gate is our Track 1 multi-agent coordination project. It runs a staged
+**Researcher → Summarizer → Formatter** pipeline in which every handoff is
+schema-validated before the next agent can see it. An uncited claim is held at
+the gate and cannot reach the final report.
 
-Run it locally with Docker, Colima, or rootless Podman, or deploy it to
-Volcengine ECS.
+The web demo can run in deterministic mock mode with no cloud credentials, or
+with real Codex agents backed by the Volcengine Ark Responses API.
 
-> [!WARNING]
-> This is a single-user proof of concept. It intentionally has no identity,
-> tracing, audit, or hardened sandbox middleware. Do not use production data or
-> credentials. See [SECURITY.md](SECURITY.md).
+## Fastest organizer setup (no API key or Docker)
 
-## Screenshots
+This path exercises the real UI, API, session store, validation gates, event
+stream, retries, and artifact chain. Only the agent responses are deterministic.
 
-### Agent Playground
+### Requirements
 
-![Agent Playground showing lifecycle controls, starter prompts, and the Codex Runtime](docs/assets/playground.jpg)
+- Node.js 22 or newer
+- npm 10 or newer
 
-### Create an Agent
-
-![Create Agent form with name, description, and workspace instructions](docs/assets/create-agent.jpg)
-
-## Features
-
-- React and TypeScript Web UI
-- Agent create, edit, start, stop, delete, and multi-turn chat
-- Fastify control plane with asynchronous Run state
-- Persistent Agent workspaces and Codex sessions
-- Disposable Docker, Colima, or Podman container for each local turn
-- Docker and Terraform deployment paths for Volcengine ECS
-
-## Requirements
-
-- Node.js 22+
-- npm 10+
-- Docker, Colima, or Podman
-- A Volcengine Ark API key and endpoint that supports the Responses API
-
-Codex CLI is included in the Runtime image and is not required on the host.
-
-## Local browser SOP
-
-### 1. Check the local tools
-
-Install Node.js 22+ and one supported container engine, then verify them:
+### 1. Install and start
 
 ```bash
-node --version
-npm --version
-docker --version        # Docker Desktop, Docker Engine, or Colima
-podman --version        # Use this instead when running Podman
+git clone https://github.com/changfazhi/techjam-26-.git
+cd techjam-26-
+npm ci
+
+ARK_API_KEY=test-key \
+ARK_MODEL=ep-test \
+RUNTIME_PROVIDER=mock \
+npm run dev
 ```
 
-Only one container engine is required. Codex CLI is already included in the
-Runtime image.
+The mock runner does not contact Ark, but the application still requires the
+two non-placeholder test values shown above when dispatching an agent.
 
-### 2. Clone the repository
+Keep that terminal open, then visit:
+
+- Web UI: <http://localhost:5173>
+- API health check: <http://localhost:3000/api/health>
+
+### 2. Run the live UI demo
+
+On a fresh install:
+
+1. Select **Create Agent**.
+2. Name the agent `Researcher`; the description and instructions can be brief.
+3. Select the new Researcher from the sidebar.
+4. Select **Pipeline** in the page header.
+5. Select **Start live demo**.
+6. Watch Researcher, Summarizer, and Formatter reach **3 / 3 admitted**.
+7. In the artifact chain, select **Open large report view** to present the final
+   Markdown report.
+
+The built-in demo asks what can be recovered from lithium-ion batteries and
+shows how every finding retains its source document.
+
+### Optional: seed the demo from the terminal
+
+With `npm run dev` still running, open a second terminal in the repository:
 
 ```bash
-git clone <repository-url> volc-agent-launchpad
-cd volc-agent-launchpad
+npm run demo
 ```
 
-Skip this step when already working from the repository root.
+This creates all three agents, runs the battery-recycling session, and prints
+events until the session finishes. Refresh the browser, select **Researcher →
+Pipeline**, and choose the completed session from the **Session** menu.
 
-### 3. Start the POC
+### Optional: visibly demonstrate a rejected citation
+
+Start the app with one deliberate bad citation:
+
+```bash
+ARK_API_KEY=test-key \
+ARK_MODEL=ep-test \
+RUNTIME_PROVIDER=mock \
+MOCK_MISBEHAVIOUR=WRONG_CITATION \
+npm run dev
+```
+
+The Summarizer's first artifact is rejected, its violation appears in the event
+log, and the corrected retry is admitted. The invalid artifact never propagates
+to the Formatter.
+
+## Research uploaded documents
+
+The same panel can research organizer-provided material:
+
+1. Enter a question under **Research your documents**.
+2. Select up to 10 source files.
+3. Select **Research uploaded documents**.
+4. Follow the live stages and open the completed report.
+
+Supported files:
+
+- PDF (up to 10 MB)
+- TXT, Markdown, CSV, JSON, XML, HTML, YAML, and LOG (up to 100 KB each)
+- Extracted text is limited to 100,000 characters per source
+
+PDF text is extracted locally in the browser before it enters the pipeline.
+Scanned or image-only PDFs need OCR first; the UI reports this instead of
+silently sending an empty source.
+
+## Run with real AI agents
+
+Use this path to demonstrate actual Codex agent turns through Volcengine Ark.
+
+Additional requirements:
+
+- A Volcengine Ark API key
+- A Responses-compatible Ark endpoint/model ID, normally `ep-...`
+- One running container engine: Docker, Colima, or Podman
+
+From the repository root:
 
 ```bash
 ARK_API_KEY=your-ark-api-key \
@@ -73,46 +120,14 @@ ARK_MODEL=ep-your-endpoint-id \
 npm run poc
 ```
 
-The first run installs Node.js dependencies and builds the Runtime image. The
-script automatically selects Docker, Colima, or Podman.
+The first run installs dependencies when needed, builds the dedicated Runtime
+image, selects an available container engine, builds the web application, and
+starts it at <http://localhost:3000>.
 
-### 4. Open the browser
+Use the same UI steps described above. Real runs take longer than mock runs
+because each stage launches a Codex turn and may retry a held artifact.
 
-Visit <http://localhost:3000>, or open it from the terminal:
-
-```bash
-open http://localhost:3000       # macOS
-xdg-open http://localhost:3000   # Linux desktop
-```
-
-In the Web UI:
-
-1. Select **Create Agent**.
-2. Enter a name, description, and workspace instructions.
-3. Select **Create Agent** again.
-4. Enter a task in the Playground, for example:
-
-   ```text
-   Create a TypeScript hello-world CLI, add a test, and run it.
-   ```
-
-The Agent can write files, run commands, and continue the same Codex session in
-later messages.
-
-### 5. Stop and resume
-
-Press `Ctrl+C` in the startup terminal. The script removes temporary Runtime
-containers but keeps Agent workspaces and conversations.
-
-- macOS state: `~/.volc-agent-launchpad/`
-- Linux state: `.local/`
-- Custom location: set `LOCAL_POC_DATA_ROOT`
-
-Run the same `npm run poc` command to continue later.
-
-### Select a specific container engine
-
-Force Podman when multiple engines are installed:
+To force Podman when more than one engine is installed:
 
 ```bash
 CONTAINER_ENGINE=podman \
@@ -121,147 +136,91 @@ ARK_MODEL=ep-your-endpoint-id \
 npm run poc
 ```
 
-Colima uses `CONTAINER_ENGINE=docker` because it exposes the Docker CLI.
+Press `Ctrl+C` to stop. Agent workspaces and conversations remain available:
 
-For a clean Linux host, follow the
-[rootless Podman setup](docs/LOCAL_POC.md#rootless-podman-on-linux).
+- macOS: `~/.volc-agent-launchpad/`
+- Linux: `.local/`
+- Custom path: set `LOCAL_POC_DATA_ROOT`
 
-## Docker Compose
-
-Create and edit the configuration:
-
-```bash
-./scripts/bootstrap-local.sh
-```
-
-Required values in `.env`:
-
-```dotenv
-ARK_API_KEY=your-ark-api-key
-ARK_MODEL=ep-your-endpoint-id
-APP_AUTH_TOKEN=replace-with-at-least-24-random-characters
-```
-
-Start the application:
-
-```bash
-docker compose up --build
-```
-
-Open <http://localhost:3000>. Stop it without deleting Agent data:
-
-```bash
-docker compose down
-```
-
-## Development
-
-```bash
-npm install
-cp .env.example .env
-npm install --global @openai/codex@0.111.0
-npm run dev
-```
-
-- Web UI: <http://localhost:5173>
-- API: <http://localhost:3000>
-
-Use local paths in `.env` when running outside Docker:
-
-```dotenv
-APP_DATA_DIR=.data
-AGENT_WORKSPACE_ROOT=workspaces
-CODEX_HOME=codex-home
-```
-
-### Run the Handoff Gate pipeline
-
-With the server up, drive all three stages (Researcher → Summarizer → Formatter) end to end:
-
-```bash
-npm run demo
-```
-
-It creates the three stage Agents, seeds the source documents, starts the session, and prints
-the event log until the session reaches `completed` or `failed`. Set `RUNTIME_PROVIDER=mock` in
-`.env` to rehearse the whole pipeline in about a second with no container engine and no Ark
-call; set `BASE_URL` if the API is not on `http://localhost:3000`.
-
-A stage that fails its schema is *held*, not passed on — the run then shows `stage.rejected`
-with the violation that caused it, which is the behaviour worth demonstrating.
-
-## Deployment
-
-- [Existing Linux ECS with Docker](docs/DEPLOYMENT.md#existing-linux-ecs)
-- [Complete Volcengine environment with Terraform](docs/DEPLOYMENT.md#terraform-deployment)
-- [Local Docker, Colima, and Podman details](docs/LOCAL_POC.md)
-
-The existing-ECS script deploys from the current source tree:
-
-```bash
-cp .env.example .env.production
-./scripts/deploy-existing-ecs.sh .env.production
-```
-
-The Terraform path provisions VPC, subnet, security group, ECS, and EIP:
-
-```bash
-cp deploy/volcengine/terraform.tfvars.example \
-  deploy/volcengine/terraform.tfvars
-./scripts/deploy-volcengine.sh
-```
-
-## Configuration
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `ARK_API_KEY` | Required | Ark model API key. |
-| `ARK_MODEL` | Required | Responses-capable endpoint or model ID. |
-| `ARK_BASE_URL` | Beijing v3 endpoint | Ark OpenAI-compatible API URL. |
-| `APP_AUTH_TOKEN` | Empty on loopback | Shared demo token; use 24+ random characters remotely. |
-| `RUNTIME_PROVIDER` | `local-process` | `container` for disposable local Runtime containers. |
-| `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox mode. |
-| `CODEX_TIMEOUT_MS` | `600000` | Maximum duration of one turn. |
-| `LOCAL_POC_DATA_ROOT` | Platform-specific | Local metadata, workspace, and session directory. |
-
-See [.env.example](.env.example) for all Runtime and resource-limit options.
-
-## How it works
+## What the demo proves
 
 ```mermaid
 flowchart LR
-    UI["React Web UI"] --> API["Fastify control plane"]
-    API --> Store["JSON metadata and Agent workspaces"]
-    API --> Runtime{"Runtime provider"}
-    Runtime -->|Local POC| Container["Disposable Docker / Colima / Podman container"]
-    Runtime -->|ECS profile| Codex["Codex CLI in application container"]
-    Container --> Ark["Volcengine Ark Responses API"]
-    Codex --> Ark
+    Sources["Uploaded or seeded sources"] --> Researcher
+    Researcher -->|"research.json"| Gate1{"Schema + source gate"}
+    Gate1 -->|admit| Summarizer
+    Gate1 -->|hold + retry| Researcher
+    Summarizer -->|"summary.json"| Gate2{"Citation gate"}
+    Gate2 -->|admit| Formatter
+    Gate2 -->|hold + retry| Summarizer
+    Formatter -->|"report.md"| Gate3{"Report + reference gate"}
+    Gate3 --> Report["Judge-readable report"]
 ```
 
-The first turn uses `codex exec`; later turns resume the stored Codex thread.
-Deleting an Agent archives its workspace under `workspaces/.deleted/`.
+- Agent workspaces are isolated from one another.
+- The coordinator brokers every cross-agent artifact.
+- Each artifact must satisfy its stage schema.
+- Summary citations must point to admitted Researcher claims.
+- The final report must carry the source documents for every cited claim.
+- Held artifacts leave an auditable event and never enter downstream context.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for component and extension
-boundaries.
+## Useful commands
 
-## Validation
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the development API and web UI. |
+| `npm run poc` | Build and run the real local container-backed POC. |
+| `npm run demo` | Drive the battery pipeline through the running API. |
+| `npm run check` | Run typechecks, tests, and production builds. |
+| `npm run test` | Run the server and middleware tests. |
 
-```bash
-npm run check
-terraform fmt -check -recursive deploy/volcengine
-docker compose config
-```
+## Configuration
 
-## Documentation
+| Variable | Typical value | Purpose |
+| --- | --- | --- |
+| `ARK_API_KEY` | `test-key` or a real key | Required dispatch credential. Mock mode makes no Ark call. |
+| `ARK_MODEL` | `ep-test` or an Ark endpoint ID | Responses-compatible model/endpoint identifier. |
+| `RUNTIME_PROVIDER` | `mock`, `container`, `local-process` | Select deterministic, container, or host Codex execution. |
+| `MOCK_MISBEHAVIOUR` | `NONE`, `WRONG_CITATION` | Select the normal mock or visible citation-retry scenario. |
+| `APP_AUTH_TOKEN` | 24+ URL-safe characters | Required when production listens beyond loopback. |
+| `LOCAL_POC_DATA_ROOT` | A host directory | Override persistent local POC storage. |
 
+See [.env.example](.env.example) for all paths, limits, and runtime options.
+
+## Troubleshooting
+
+**The UI says “Runtime configuration needed.”**
+
+Restart with non-placeholder `ARK_API_KEY` and `ARK_MODEL` values. Use
+`test-key` and `ep-test` in mock mode.
+
+**The panel says “Demo fixture — not live data.”**
+
+Select **Start live demo**, or choose a persisted run from the Session menu.
+
+**Port 3000 or 5173 is already in use.**
+
+Stop the earlier development process before starting another copy.
+
+**The PDF reports that no readable text was found.**
+
+It is probably scanned or image-only. Run OCR on the PDF, then upload the
+searchable copy.
+
+**No container engine was found.**
+
+Start Docker Desktop, Colima, or the Podman machine, then rerun `npm run poc`.
+For a no-container evaluation, use the mock setup at the top of this README.
+
+## Project documentation
+
+- [Project blueprint](docs/BLUEPRINT.md)
 - [Architecture](docs/ARCHITECTURE.md)
-- [Local POC](docs/LOCAL_POC.md)
-- [Deployment](docs/DEPLOYMENT.md)
-- [Hackathon extension guide](docs/HACKATHON_EXTENSION_GUIDE.md)
+- [Implementation plan](docs/PLAN.md)
+- [Detailed local POC setup](docs/LOCAL_POC.md)
+- [Deployment guide](docs/DEPLOYMENT.md)
 - [Security policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md)
 
-## License
-
-[MIT](LICENSE)
+This is a single-user hackathon proof of concept. Use scoped demonstration
+credentials and non-sensitive source documents. It is licensed under the
+[MIT License](LICENSE).
