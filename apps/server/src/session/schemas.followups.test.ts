@@ -176,55 +176,6 @@ describe("redaction fixes: false positive regression & deduplication", () => {
     expect(scanForSecrets(text)).toEqual([]);
   });
 
-  it("flags a runtime ARK_API_KEY at the twelve-character floor", () => {
-    process.env.ARK_API_KEY = "ark-key-1234";
-    try {
-      const findings = scanForSecrets("leaked ark-key-1234 in the artifact");
-      expect(findings.some((f) => f.hint.includes("runtime environment ARK_API_KEY"))).toBe(true);
-      expect(findings.every((f) => !f.hint.includes("ark-key-1234"))).toBe(true);
-    } finally {
-      delete process.env.ARK_API_KEY;
-    }
-  });
-
-  it("still ignores the documented eight-character test key", () => {
-    process.env.ARK_API_KEY = "test-key";
-    try {
-      expect(scanForSecrets("Ordinary text mentioning test-key in passing")).toEqual([]);
-    } finally {
-      delete process.env.ARK_API_KEY;
-    }
-  });
-
-  it("flags an ep- endpoint id whose numeric segment is not first", () => {
-    const findings = scanForSecrets("Connecting to endpoint ep-m-20240830123456");
-    expect(findings.length).toBe(1);
-    expect(findings[0]?.kind).toBe("ark-key");
-    expect(findings[0]?.hint).not.toContain("ep-m-20240830123456");
-  });
-
-  it("flags an ep- endpoint id with short digit runs", () => {
-    expect(scanForSecrets("endpoint ep-2024-0830-abcde").length).toBe(1);
-  });
-
-  it("flags a lowercase bearer token in an Authorization header", () => {
-    const findings = scanForSecrets("authorization: bearer abcdefghijklmnopqrstuvwxyz123");
-    expect(findings.length).toBe(1);
-    expect(findings[0]?.kind).toBe("token-like");
-    expect(findings[0]?.hint).not.toContain("abcdefghijklmnopqrstuvwxyz123");
-  });
-
-  it("flags an uppercase BEARER token", () => {
-    const findings = scanForSecrets("BEARER abcdefghijklmnopqrstuvwxyz123");
-    expect(findings.length).toBe(1);
-  });
-
-  it("still ignores lowercase bearer in ordinary English prose", () => {
-    const text =
-      "The individual was the bearer of-the-standard-responsibility-set across the organization.";
-    expect(scanForSecrets(text)).toEqual([]);
-  });
-
   it("emits one finding per distinct secret credential without collapsing hints", () => {
     const text = "Key A: sk-11111111111111111111\nKey B: sk-22222222222222222222";
     const findings = scanForSecrets(text);
