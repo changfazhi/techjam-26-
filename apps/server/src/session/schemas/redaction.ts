@@ -46,10 +46,22 @@ const SECRET_PATTERNS: Array<{
   {
     // Authorization Bearer tokens, in any case: HTTP auth schemes are
     // case-insensitive (RFC 7235) and clients routinely emit "bearer".
-    // The lookahead requires a digit in the token, which every real bearer
-    // credential (JWT, base64) has and hyphenated English prose does not —
-    // that is what keeps "the bearer of-the-standard-responsibility-set" out.
-    regex: /\bbearer\s+(?=[a-zA-Z0-9_\-.]*\d)[a-zA-Z0-9_\-.]{20,}\b/gi,
+    //
+    // Two alternatives, because the two contexts can afford different rules:
+    //
+    //   1. After an Authorization header, anything 20+ chars is a credential.
+    //      "authorization: bearer <x>" is never English, so no digit is needed
+    //      and a rare all-alphabetic token is still caught.
+    //   2. Anywhere else — bare "Bearer eyJ...", a curl -H, a code sample —
+    //      there is no header to lean on, so the lookahead requires a digit.
+    //      Every real bearer credential (JWT, base64) has one and hyphenated
+    //      English prose does not; that is what keeps the phrase "the bearer
+    //      of-the-standard-responsibility-set" out of the findings.
+    //
+    // One pattern rather than two entries: alternation matches once per
+    // secret, where two entries would report the same header token twice.
+    regex:
+      /(?:\b(?:authorization|auth)\s*[:=]\s*['"]?bearer\s+['"]?[a-zA-Z0-9_\-.]{20,}|\bbearer\s+(?=[a-zA-Z0-9_\-.]*\d)[a-zA-Z0-9_\-.]{20,})\b/gi,
     kind: "token-like",
     hint: "Artifact contains a Bearer authorization token",
   },

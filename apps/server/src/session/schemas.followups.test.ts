@@ -264,6 +264,40 @@ describe("redaction fixes: false positive regression & deduplication", () => {
     expect(scanForSecrets(text)).toEqual([]);
   });
 
+  // A leaked bearer token does not always arrive with its header attached: it
+  // shows up in prose, in a curl -H, in a pasted code sample. Narrowing the
+  // pattern to Authorization-header context only would let those through, so
+  // these two cases pin both contexts.
+  it("flags a bare Bearer token with no Authorization header around it", () => {
+    const findings = scanForSecrets(
+      "Use Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9 to authenticate.",
+    );
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.kind).toBe("token-like");
+  });
+
+  it("flags a bare bearer token inside a curl invocation", () => {
+    const findings = scanForSecrets(
+      'curl -H "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" https://api.example.com',
+    );
+    expect(findings.length).toBe(1);
+  });
+
+  // In header context there is no English to protect, so an all-alphabetic
+  // token is still a credential and must not need a digit to be caught.
+  it("flags an Authorization header token that contains no digits", () => {
+    const findings = scanForSecrets("Authorization: Bearer abcdefghijklmnopqrstuvwxyz");
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.kind).toBe("token-like");
+  });
+
+  it("reports a header-context token once rather than once per alternative", () => {
+    const findings = scanForSecrets(
+      "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+    );
+    expect(findings.length).toBe(1);
+  });
+
   it("emits one finding per distinct secret credential without collapsing hints", () => {
     const text = "Key A: sk-11111111111111111111\nKey B: sk-22222222222222222222";
     const findings = scanForSecrets(text);
