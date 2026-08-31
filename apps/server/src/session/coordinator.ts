@@ -195,6 +195,8 @@ export class SessionCoordinator {
       inputContents,
       // What the previous attempt got wrong, so the agent can fix it.
       violations: priorViolations,
+      // The only sourceIds the schemas will accept.
+      sourceManifest: session.sourceManifest,
     });
 
     // A dispatch can legitimately fail — an operator stopped the agent, or a
