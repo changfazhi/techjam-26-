@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildStagePrompt } from "./prompt.js";
+import { buildStagePrompt, SOURCE_MANIFEST_HEADING } from "./prompt.js";
 import { researchSchema, reportSchema, scanForSecrets } from "./schemas/index.js";
 import type { Stage } from "./types.js";
 
@@ -42,6 +42,45 @@ describe("fix 1: prompt carries stage.instruction", () => {
       violations: [],
     });
     expect(prompt).not.toContain("## Your task");
+  });
+});
+
+describe("prompt carries the seeded source manifest", () => {
+  const base = {
+    stage,
+    schemaDescription: "{...}",
+    priorEvents: [],
+    inputContents: null,
+    violations: [],
+  };
+
+  // Stage 1 has no input file, so without this section the prompt never names a
+  // single seeded filename — yet every schema demands the exact filename as a
+  // sourceId. That mismatch failed all three attempts of the first real run.
+  it("names every seeded source under the manifest heading", () => {
+    const prompt = buildStagePrompt({
+      ...base,
+      sourceManifest: ["recycling-notes.md", "safety-notes.md"],
+    });
+    expect(prompt).toContain(SOURCE_MANIFEST_HEADING);
+    expect(prompt).toContain("- recycling-notes.md");
+    expect(prompt).toContain("- safety-notes.md");
+  });
+
+  it("omits the section entirely when no sources were seeded", () => {
+    expect(buildStagePrompt({ ...base, sourceManifest: [] })).not.toContain(
+      SOURCE_MANIFEST_HEADING,
+    );
+    expect(buildStagePrompt(base)).not.toContain(SOURCE_MANIFEST_HEADING);
+  });
+
+  it("ignores blank entries rather than emitting an empty bullet", () => {
+    const prompt = buildStagePrompt({
+      ...base,
+      sourceManifest: ["  ", "recycling-notes.md"],
+    });
+    expect(prompt).toContain("- recycling-notes.md");
+    expect(prompt).not.toContain("- \n");
   });
 });
 
@@ -174,6 +213,89 @@ describe("redaction fixes: false positive regression & deduplication", () => {
   it("does not flag normal English phrase 'the bearer of-the-standard-responsibility-set'", () => {
     const text = "the bearer of-the-standard-responsibility-set";
     expect(scanForSecrets(text)).toEqual([]);
+  });
+
+  it("flags a runtime ARK_API_KEY at the twelve-character floor", () => {
+    process.env.ARK_API_KEY = "ark-key-1234";
+    try {
+      const findings = scanForSecrets("leaked ark-key-1234 in the artifact");
+      expect(findings.some((f) => f.hint.includes("runtime environment ARK_API_KEY"))).toBe(true);
+      expect(findings.every((f) => !f.hint.includes("ark-key-1234"))).toBe(true);
+    } finally {
+      delete process.env.ARK_API_KEY;
+    }
+  });
+
+  it("still ignores the documented eight-character test key", () => {
+    process.env.ARK_API_KEY = "test-key";
+    try {
+      expect(scanForSecrets("Ordinary text mentioning test-key in passing")).toEqual([]);
+    } finally {
+      delete process.env.ARK_API_KEY;
+    }
+  });
+
+  it("flags an ep- endpoint id whose numeric segment is not first", () => {
+    const findings = scanForSecrets("Connecting to endpoint ep-m-20240830123456");
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.kind).toBe("ark-key");
+    expect(findings[0]?.hint).not.toContain("ep-m-20240830123456");
+  });
+
+  it("flags an ep- endpoint id with short digit runs", () => {
+    expect(scanForSecrets("endpoint ep-2024-0830-abcde").length).toBe(1);
+  });
+
+  it("flags a lowercase bearer token in an Authorization header", () => {
+    const findings = scanForSecrets("authorization: bearer abcdefghijklmnopqrstuvwxyz123");
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.kind).toBe("token-like");
+    expect(findings[0]?.hint).not.toContain("abcdefghijklmnopqrstuvwxyz123");
+  });
+
+  it("flags an uppercase BEARER token", () => {
+    const findings = scanForSecrets("BEARER abcdefghijklmnopqrstuvwxyz123");
+    expect(findings.length).toBe(1);
+  });
+
+  it("still ignores lowercase bearer in ordinary English prose", () => {
+    const text =
+      "The individual was the bearer of-the-standard-responsibility-set across the organization.";
+    expect(scanForSecrets(text)).toEqual([]);
+  });
+
+  // A leaked bearer token does not always arrive with its header attached: it
+  // shows up in prose, in a curl -H, in a pasted code sample. Narrowing the
+  // pattern to Authorization-header context only would let those through, so
+  // these two cases pin both contexts.
+  it("flags a bare Bearer token with no Authorization header around it", () => {
+    const findings = scanForSecrets(
+      "Use Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9 to authenticate.",
+    );
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.kind).toBe("token-like");
+  });
+
+  it("flags a bare bearer token inside a curl invocation", () => {
+    const findings = scanForSecrets(
+      'curl -H "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" https://api.example.com',
+    );
+    expect(findings.length).toBe(1);
+  });
+
+  // In header context there is no English to protect, so an all-alphabetic
+  // token is still a credential and must not need a digit to be caught.
+  it("flags an Authorization header token that contains no digits", () => {
+    const findings = scanForSecrets("Authorization: Bearer abcdefghijklmnopqrstuvwxyz");
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.kind).toBe("token-like");
+  });
+
+  it("reports a header-context token once rather than once per alternative", () => {
+    const findings = scanForSecrets(
+      "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+    );
+    expect(findings.length).toBe(1);
   });
 
   it("emits one finding per distinct secret credential without collapsing hints", () => {
