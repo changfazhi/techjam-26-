@@ -1,11 +1,30 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { api, pipelineApi } from "../api";
-import type { Agent, Artifact, Session, SessionEvent, Stage } from "../types";
+import type {
+  Agent,
+  Artifact,
+  CreateSessionInput,
+  Session,
+  SessionEvent,
+  Stage,
+} from "../types";
+import { extractPdfText } from "./pdf-text";
 import "./pipeline.css";
 
 const POLL_INTERVAL_MS = 900;
 /** Consecutive failed polls tolerated before live updates give up. */
 const MAX_POLL_FAILURES = 5;
+const MAX_SOURCE_FILES = 10;
+const MAX_SOURCE_BYTES = 100_000;
+const MAX_PDF_BYTES = 10_000_000;
+const TEXT_DOCUMENT_NAME = /\.(?:txt|md|markdown|csv|json|xml|html?|ya?ml|log)$/i;
+const PDF_DOCUMENT_NAME = /\.pdf$/i;
+
+interface UploadedSource {
+  name: string;
+  content: string;
+  bytes: number;
+}
 
 export interface PipelinePanelProps {
   agentId: string;
@@ -23,6 +42,9 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
   const [note, setNote] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [researchTopic, setResearchTopic] = useState("");
+  const [uploadedSources, setUploadedSources] = useState<UploadedSource[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -95,6 +117,9 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
           const { session: refreshed } = await pipelineApi.get(session.id);
           if (!active) return;
           setSession(refreshed);
+          setAvailableSessions((current) => current.map((item) =>
+            item.id === refreshed.id ? refreshed : item
+          ));
 
           if (refreshed.state !== "running") {
             // The coordinator commits the terminal state before it emits the
@@ -130,6 +155,9 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
     try {
       const { session: stopped } = await pipelineApi.stop(session.id);
       setSession(stopped);
+      setAvailableSessions((current) => current.map((item) =>
+        item.id === stopped.id ? stopped : item
+      ));
     } catch (error) {
       setNote(
         error instanceof Error
@@ -171,10 +199,18 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
     }
   };
 
-  const startDemo = async () => {
+  const startPipeline = async (
+    inputForAgents: (
+      researcherId: string,
+      summarizerId: string,
+      formatterId: string,
+    ) => CreateSessionInput,
+    preparingMessage: string,
+    startedMessage: string,
+  ) => {
     if (starting || session.state === "running") return;
     setStarting(true);
-    setNote("Preparing a live three-agent session...");
+    setNote(preparingMessage);
 
     try {
       const { agents } = await api.listAgents();
@@ -190,7 +226,7 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
       }
 
       const { session: created } = await pipelineApi.create(
-        demoSessionInput(researcher.id, summarizer.id, formatter.id),
+        inputForAgents(researcher.id, summarizer.id, formatter.id),
       );
       const { session: running } = await pipelineApi.start(created.id);
 
@@ -202,16 +238,120 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
         ...current.filter((item) => item.id !== running.id),
       ]);
       setLive(true);
-      setNote("Live demo started. Events and admitted artifacts update automatically.");
+      setNote(startedMessage);
     } catch (error) {
       setNote(
         error instanceof Error
-          ? "Could not start the live demo: " + error.message
-          : "Could not start the live demo.",
+          ? "Could not start the research pipeline: " + error.message
+          : "Could not start the research pipeline.",
       );
     } finally {
       setStarting(false);
     }
+  };
+
+  const startDemo = () => startPipeline(
+    (researcherId, summarizerId, formatterId) => pipelineSessionInput(
+      researcherId,
+      summarizerId,
+      formatterId,
+      "Battery recycling provenance demo",
+      "What can be recovered from lithium-ion batteries?",
+      DEMO_SOURCES,
+    ),
+    "Preparing a live three-agent session...",
+    "Live demo started. Events and admitted artifacts update automatically.",
+  );
+
+  const addSourceFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setUploadError(null);
+
+    const selected = Array.from(files);
+    const invalidName = selected.find(
+      (file) =>
+        file.name.length > 255 ||
+        file.name.includes("..") ||
+        file.name.includes("/") ||
+        file.name.includes("\\") ||
+        !TEXT_DOCUMENT_NAME.test(file.name) && !PDF_DOCUMENT_NAME.test(file.name),
+    );
+    if (invalidName) {
+      setUploadError(
+        invalidName.name + " is not supported. Use PDF, TXT, Markdown, CSV, JSON, XML, HTML, YAML, or LOG files.",
+      );
+      return;
+    }
+
+    const oversized = selected.find((file) =>
+      file.size > (PDF_DOCUMENT_NAME.test(file.name) ? MAX_PDF_BYTES : MAX_SOURCE_BYTES)
+    );
+    if (oversized) {
+      const limit = PDF_DOCUMENT_NAME.test(oversized.name) ? "10 MB PDF" : "100 KB source";
+      setUploadError(oversized.name + " is larger than the " + limit + " limit.");
+      return;
+    }
+
+    try {
+      const loaded = await Promise.all(
+        selected.map(async (file): Promise<UploadedSource> => {
+          const content = PDF_DOCUMENT_NAME.test(file.name)
+            ? await extractPdfText(await file.arrayBuffer())
+            : await file.text();
+          if (content.length > MAX_SOURCE_BYTES) {
+            throw new Error(
+              file.name + " contains more than 100,000 extracted characters. Use a shorter PDF or split it into sections.",
+            );
+          }
+          return { name: file.name, content, bytes: file.size };
+        }),
+      );
+
+      const nextNames = new Set([
+        ...uploadedSources.map((source) => source.name),
+        ...loaded.map((source) => source.name),
+      ]);
+      if (nextNames.size > MAX_SOURCE_FILES) {
+        setUploadError("A research session can contain at most 10 source documents.");
+        return;
+      }
+
+      setUploadedSources((current) => {
+        const byName = new Map(current.map((source) => [source.name, source]));
+        for (const source of loaded) byName.set(source.name, source);
+        return [...byName.values()];
+      });
+    } catch (error) {
+      setUploadError(
+        error instanceof Error ? error.message : "The selected documents could not be read.",
+      );
+    }
+  };
+
+  const startUploadedResearch = () => {
+    const topic = researchTopic.trim();
+    if (!topic) {
+      setUploadError("Enter the research question the documents should answer.");
+      return;
+    }
+    if (!uploadedSources.length) {
+      setUploadError("Choose at least one source document.");
+      return;
+    }
+
+    setUploadError(null);
+    void startPipeline(
+      (researcherId, summarizerId, formatterId) => pipelineSessionInput(
+        researcherId,
+        summarizerId,
+        formatterId,
+        "Document research: " + topic.slice(0, 181),
+        topic,
+        uploadedSources.map(({ name, content }) => ({ name, content })),
+      ),
+      "Uploading the sources and preparing the research agents...",
+      "Document research started. The Researcher is reading the uploaded source set.",
+    );
   };
 
   return (
@@ -229,7 +369,7 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
           <button
             className="button button-primary"
             type="button"
-            onClick={startDemo}
+            onClick={() => void startDemo()}
             disabled={starting || session.state === "running"}
           >
             {starting ? "Starting..." : live ? "New live demo" : "Start live demo"}
@@ -247,6 +387,73 @@ export function PipelinePanel({ agentId, onClose }: PipelinePanelProps) {
           </button>
         </div>
       </header>
+
+      <section className="pipeline-upload" aria-labelledby="pipeline-upload-title">
+        <div className="pipeline-upload-head">
+          <div>
+            <span className="eyebrow">Your source material</span>
+            <h3 id="pipeline-upload-title">Research your documents</h3>
+          </div>
+          <span>{uploadedSources.length} / {MAX_SOURCE_FILES} files</span>
+        </div>
+        <label className="pipeline-topic-field">
+          Research question
+          <textarea
+            value={researchTopic}
+            onChange={(event) => setResearchTopic(event.target.value)}
+            placeholder="What should the agents determine from these documents?"
+            maxLength={10_000}
+            rows={2}
+            disabled={starting || session.state === "running"}
+          />
+        </label>
+        <label className="pipeline-file-field">
+          Source documents
+          <input
+            type="file"
+            multiple
+            accept=".pdf,.txt,.md,.markdown,.csv,.json,.xml,.html,.htm,.yaml,.yml,.log,application/pdf,text/plain,text/markdown,text/csv,application/json"
+            disabled={starting || session.state === "running"}
+            onChange={(event) => {
+              void addSourceFiles(event.currentTarget.files);
+              event.currentTarget.value = "";
+            }}
+          />
+          <small>Up to 10 files. PDFs can be 10 MB; extracted text is limited to 100,000 characters. Scanned PDFs need OCR first.</small>
+        </label>
+        {uploadedSources.length > 0 && (
+          <ul className="pipeline-source-list">
+            {uploadedSources.map((source) => (
+              <li key={source.name}>
+                <div>
+                  <strong>{source.name}</strong>
+                  <span>{formatBytes(source.bytes)}</span>
+                </div>
+                <button
+                  className="button button-ghost"
+                  type="button"
+                  aria-label={"Remove " + source.name}
+                  disabled={starting || session.state === "running"}
+                  onClick={() => setUploadedSources((current) =>
+                    current.filter((item) => item.name !== source.name)
+                  )}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {uploadError && <p className="pipeline-upload-error" role="alert">{uploadError}</p>}
+        <button
+          className="button button-primary pipeline-research-button"
+          type="button"
+          disabled={starting || session.state === "running"}
+          onClick={startUploadedResearch}
+        >
+          {starting ? "Starting research..." : "Research uploaded documents"}
+        </button>
+      </section>
 
       <div className="pipeline-status">
         <strong>{session.state}</strong>
@@ -365,15 +572,30 @@ function ArtifactViewer({
   artifacts: Record<string, Artifact>;
   values: Record<string, unknown>;
 }) {
+  const [expandedStageId, setExpandedStageId] = useState<string | null>(null);
+  const expandedStage = stages.find((stage) => stage.id === expandedStageId);
+  const expandedValue = expandedStage ? values[expandedStage.id] : undefined;
+
+  useEffect(() => {
+    if (!expandedStageId) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpandedStageId(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [expandedStageId]);
+
   return (
     <section className="pipeline-section">
       <h3>Artifact chain</h3>
       <ol className="pipeline-artifact-chain">
         {stages.map((stage) => {
           const artifact = artifacts[stage.id];
+          const isMarkdownReport = stage.outputPath.toLowerCase().endsWith(".md");
 
           return (
-            <li key={stage.id}>
+            <li className={isMarkdownReport ? "is-report" : undefined} key={stage.id}>
               <strong>{stage.outputPath}</strong>
               {artifact ? (
                 <>
@@ -385,6 +607,15 @@ function ArtifactViewer({
                     <summary>Gate-admitted value</summary>
                     <pre>{formatValue(values[stage.id])}</pre>
                   </details>
+                  {isMarkdownReport && typeof values[stage.id] === "string" && (
+                    <button
+                      className="button button-primary artifact-expand-button"
+                      type="button"
+                      onClick={() => setExpandedStageId(stage.id)}
+                    >
+                      Open large report view
+                    </button>
+                  )}
                 </>
               ) : (
                 <em>Not admitted - no artifact propagated.</em>
@@ -393,6 +624,37 @@ function ArtifactViewer({
           );
         })}
       </ol>
+      {expandedStage && typeof expandedValue === "string" && (
+        <div
+          className="artifact-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setExpandedStageId(null);
+          }}
+        >
+          <section
+            className="artifact-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="artifact-modal-title"
+          >
+            <header className="artifact-modal-head">
+              <div>
+                <span className="eyebrow">Completed report</span>
+                <h3 id="artifact-modal-title">{expandedStage.outputPath}</h3>
+              </div>
+              <button
+                className="button button-ghost"
+                type="button"
+                autoFocus
+                onClick={() => setExpandedStageId(null)}
+              >
+                Close
+              </button>
+            </header>
+            <pre className="artifact-report-content">{expandedValue}</pre>
+          </section>
+        </div>
+      )}
     </section>
   );
 }
@@ -421,28 +683,33 @@ async function ensureDemoAgent(
   return agent;
 }
 
-function demoSessionInput(
+const DEMO_SOURCES: CreateSessionInput["sources"] = [
+  {
+    name: "recycling-notes.md",
+    content: "# Recycling notes\nLithium-ion battery recycling can recover lithium and nickel.",
+  },
+  {
+    name: "safety-notes.md",
+    content: "# Safety notes\nRecovering materials requires controlled processing.",
+  },
+  {
+    name: "market-notes.md",
+    content: "# Market notes\nRecycled materials can reduce demand for virgin extraction.",
+  },
+];
+
+function pipelineSessionInput(
   researcherId: string,
   summarizerId: string,
   formatterId: string,
-) {
+  title: string,
+  topic: string,
+  sources: CreateSessionInput["sources"],
+): CreateSessionInput {
   return {
-    title: "Battery recycling provenance demo",
-    topic: "What can be recovered from lithium-ion batteries?",
-    sources: [
-      {
-        name: "recycling-notes.md",
-        content: "# Recycling notes\nLithium-ion battery recycling can recover lithium and nickel.",
-      },
-      {
-        name: "safety-notes.md",
-        content: "# Safety notes\nRecovering materials requires controlled processing.",
-      },
-      {
-        name: "market-notes.md",
-        content: "# Market notes\nRecycled materials can reduce demand for virgin extraction.",
-      },
-    ],
+    title,
+    topic,
+    sources,
     stages: [
       {
         id: "research",
@@ -451,7 +718,7 @@ function demoSessionInput(
         schemaId: "research",
         outputPath: "research.json",
         inputFileName: null,
-        instruction: "Extract sourced claims from the seeded documents.",
+        instruction: "Read the seeded source documents and extract sourced claims that answer the session topic.",
       },
       {
         id: "summary",
@@ -473,6 +740,11 @@ function demoSessionInput(
       },
     ],
   };
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1_000) return String(bytes) + " B";
+  return (bytes / 1_000).toFixed(1) + " KB";
 }
 
 function makeFixture(agentId: string): { session: Session; events: SessionEvent[] } {

@@ -38,7 +38,7 @@ it has ever run.
 | Stage schemas and the citation gate | **Done** — `session/schemas/*.ts`, including the cross-cutting credential scan in `redaction.ts` |
 | Prompt assembly | **Done** — `session/prompt.ts` |
 | HTTP routes | **Done** — all six in `session/routes.ts`, 18 tests in `routes.test.ts` |
-| Pipeline UI | **Done, live-backed** — `apps/web/src/pipeline/PipelinePanel.tsx` can create/start the seeded demo, poll events and terminal state, stop a run, and switch between persisted sessions. The fixture remains an explicitly labelled fallback. The live path has been exercised end to end with `RUNTIME_PROVIDER=mock`; the real runner still needs rehearsal. |
+| Pipeline UI | **Done, live-backed** — `apps/web/src/pipeline/PipelinePanel.tsx` can create/start the seeded demo, accept up to 10 uploaded text documents or text-based PDFs for a custom research question, poll events and terminal state, stop a run, switch between persisted sessions, and open the final Markdown report in a large reading view. PDF text is extracted in-browser (including Flate streams and ToUnicode maps); scanned PDFs need OCR first. The fixture remains an explicitly labelled fallback. The live path has been exercised end to end with `RUNTIME_PROVIDER=mock`; the real runner still needs rehearsal. |
 | Baseline acceptance test | **Never run.** `.data/`, `workspaces/`, `codex-home/` are empty; no real model call has ever been made |
 
 `npm run check` on `main` passes: the full test suite, both typechecks, both production builds.

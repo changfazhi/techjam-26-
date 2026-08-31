@@ -41,6 +41,124 @@
   flex-wrap: wrap;
 }
 
+.pipeline-upload {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.pipeline-upload-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pipeline-upload-head > span {
+  padding: 3px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: #f0efea;
+  border-radius: 999px;
+}
+
+.pipeline-topic-field,
+.pipeline-file-field {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pipeline-topic-field textarea,
+.pipeline-file-field input {
+  box-sizing: border-box;
+  width: 100%;
+  color: var(--ink);
+  font: inherit;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.pipeline-topic-field textarea {
+  min-height: 70px;
+  padding: 10px 11px;
+  resize: vertical;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.pipeline-file-field input {
+  padding: 8px;
+  font-weight: 400;
+}
+
+.pipeline-file-field input::file-selector-button {
+  padding: 7px 10px;
+  margin-right: 10px;
+  color: var(--purple-dark);
+  font-weight: 700;
+  background: var(--purple-soft);
+  border: 1px solid var(--purple);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pipeline-file-field small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.pipeline-source-list {
+  display: grid;
+  gap: 7px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.pipeline-source-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.pipeline-source-list strong,
+.pipeline-source-list span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.pipeline-source-list span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pipeline-upload-error {
+  padding: 8px 10px;
+  color: #8f3b3b;
+  background: #f7e9e7;
+  border: 1px solid #e6bdb8;
+  border-radius: 7px;
+}
+
+.pipeline-research-button {
+  justify-self: start;
+}
+
 .pipeline-status {
   flex-wrap: wrap;
   gap: 8px;
@@ -287,6 +405,60 @@
   border-radius: 5px;
 }
 
+.artifact-expand-button {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.artifact-modal-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  padding: 16px;
+  place-items: center;
+  background: rgb(25 27 31 / 72%);
+  backdrop-filter: blur(3px);
+}
+
+.artifact-modal {
+  display: flex;
+  box-sizing: border-box;
+  width: min(1080px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 20px;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 38%);
+}
+
+.artifact-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.artifact-report-content {
+  min-height: min(560px, calc(100vh - 180px));
+  max-height: none;
+  padding: 24px;
+  margin: 0;
+  overflow: auto;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
 @media (max-width: 660px) {
   .pipeline-panel-head {
     align-items: flex-start;
@@ -303,6 +475,16 @@
     width: 100%;
   }
 
+  .pipeline-upload-head,
+  .pipeline-source-list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pipeline-research-button {
+    width: 100%;
+  }
+
   .pipeline-artifact-chain {
     grid-template-columns: 1fr;
     gap: 12px;
@@ -313,5 +495,17 @@
     right: 50%;
     bottom: -17px;
     transform: translateX(50%) rotate(90deg);
+  }
+
+  .artifact-modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    padding: 14px;
+  }
+
+  .artifact-report-content {
+    min-height: calc(100vh - 150px);
+    padding: 16px;
+    font-size: 13px;
   }
 }

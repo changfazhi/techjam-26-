@@ -71,6 +71,52 @@ describe("MockRunner provenance", () => {
     expect(research.claims[0]?.sourceId).toBe("market-notes.md");
   });
 
+  it("extracts mock claims from user-supplied source documents", async () => {
+    const workspacePath = await mkdtemp(path.join(tmpdir(), "mock-runner-"));
+    temporaryDirectories.push(workspacePath);
+    await writeFile(
+      path.join(workspacePath, "earnings.md"),
+      "# Earnings\nRevenue increased by 14 percent.\nOperating margin reached 22 percent.\n",
+      "utf8",
+    );
+    await writeFile(
+      path.join(workspacePath, "outlook.txt"),
+      "Management expects demand to remain stable.\n",
+      "utf8",
+    );
+
+    await new MockRunner().run(
+      request(
+        workspacePath,
+        [
+          "Write your answer to `research.json` in this workspace.",
+          SOURCE_MANIFEST_HEADING,
+          "",
+          "- earnings.md",
+          "- outlook.txt",
+        ].join("\n\n"),
+      ),
+    );
+
+    const research = JSON.parse(
+      await readFile(path.join(workspacePath, "research.json"), "utf8"),
+    ) as { claims: Array<{ text: string; sourceId: string }> };
+
+    expect(research.claims).toMatchObject([
+      { text: "Revenue increased by 14 percent.", sourceId: "earnings.md" },
+      { text: "Operating margin reached 22 percent.", sourceId: "earnings.md" },
+      { text: "Management expects demand to remain stable.", sourceId: "outlook.txt" },
+    ]);
+
+    await new MockRunner().run(
+      request(workspacePath, "Write your answer to `summary.json` in this workspace."),
+    );
+    const summary = JSON.parse(
+      await readFile(path.join(workspacePath, "summary.json"), "utf8"),
+    ) as { keyPoints: Array<{ text: string }> };
+    expect(summary.keyPoints[0]?.text).toBe("Revenue increased by 14 percent.");
+  });
+
   it("reports the delivered key points and lists the seeded sources", async () => {
     const workspacePath = await mkdtemp(path.join(tmpdir(), "mock-runner-"));
     temporaryDirectories.push(workspacePath);

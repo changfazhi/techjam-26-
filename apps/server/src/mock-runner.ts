@@ -193,7 +193,8 @@ export class MockRunner implements AgentRunner {
     const outputPath = this.outputPath(prompt);
 
     if (outputPath?.endsWith("summary.json")) {
-      return this.summaryArtifact(VALID_CITATIONS);
+      const claim = await this.deliveredClaim(request);
+      return this.summaryArtifact(VALID_CITATIONS, claim);
     }
 
     const sources = await this.resolveSources(request);
@@ -203,30 +204,57 @@ export class MockRunner implements AgentRunner {
       return this.reportArtifact(keyPoints, sources);
     }
 
-    const sourceId = sources[0] ?? FALLBACK_SOURCE_ID;
+    return this.researchArtifact(request, sources);
+  }
+
+  private async researchArtifact(
+    request: RunnerRequest | undefined,
+    sources: string[],
+  ): Promise<string> {
+    const extracted: Array<{ text: string; sourceId: string }> = [];
+
+    if (request?.workspacePath) {
+      for (const sourceId of sources) {
+        try {
+          const raw = await readFile(resolve(request.workspacePath, sourceId), "utf8");
+          const lines = raw
+            .split(/\r?\n/)
+            .filter((line) => !/^\s*#{1,6}\s/.test(line))
+            .map((line) => line.replace(/^\s*(?:#{1,6}|[-*])\s*/, "").trim())
+            .filter((line) => line.length >= 8);
+          for (const text of lines) {
+            extracted.push({ text, sourceId });
+            if (extracted.length === 3) break;
+          }
+        } catch {
+          // The source manifest is authoritative; an unreadable file simply
+          // contributes no mock claim and the deterministic fallbacks below
+          // keep the development pipeline usable.
+        }
+        if (extracted.length === 3) break;
+      }
+    }
+
+    const fallbackSource = sources[0] ?? FALLBACK_SOURCE_ID;
+    const fallbacks = [
+      "The source set was supplied for document-grounded research.",
+      "Claims must retain the filename of the document they came from.",
+      "Only admitted claims can be passed to the summarizer.",
+    ];
+    while (extracted.length < 3) {
+      const text = fallbacks[extracted.length];
+      if (!text) break;
+      extracted.push({ text, sourceId: fallbackSource });
+    }
 
     return JSON.stringify(
       {
-        claims: [
-          {
-            id: "claim-1",
-            text: "Validated artifacts preserve provenance.",
-            confidence: 0.95,
-            sourceId,
-          },
-          {
-            id: "claim-2",
-            text: "Admission occurs before delivery.",
-            confidence: 0.9,
-            sourceId,
-          },
-          {
-            id: "claim-3",
-            text: "The event log supports auditability.",
-            confidence: 0.85,
-            sourceId,
-          },
-        ],
+        claims: extracted.map((claim, index) => ({
+          id: "claim-" + String(index + 1),
+          text: claim.text,
+          confidence: Number(Math.max(0.85, 0.95 - index * 0.05).toFixed(2)),
+          sourceId: claim.sourceId,
+        })),
       },
       null,
       2,
@@ -313,6 +341,22 @@ export class MockRunner implements AgentRunner {
     }
   }
 
+  private async deliveredClaim(request?: RunnerRequest): Promise<string> {
+    if (!request?.workspacePath) return DEFAULT_KEY_POINT;
+
+    try {
+      const raw = await readFile(resolve(request.workspacePath, "research.json"), "utf8");
+      const parsed: unknown = JSON.parse(raw);
+      const claims = (parsed as { claims?: Array<{ text?: unknown }> }).claims;
+      const text = claims?.find(
+        (claim) => typeof claim.text === "string" && claim.text.trim().length > 0,
+      )?.text;
+      return typeof text === "string" ? text : DEFAULT_KEY_POINT;
+    } catch {
+      return DEFAULT_KEY_POINT;
+    }
+  }
+
   /**
    * Stage 3 never receives research.json, so it cannot know which subset of
    * sources the summary actually cited. Listing every seeded source is a valid
@@ -328,12 +372,15 @@ export class MockRunner implements AgentRunner {
     );
   }
 
-  private summaryArtifact(citedClaimIds: string[]): string {
+  private summaryArtifact(
+    citedClaimIds: string[],
+    text = DEFAULT_KEY_POINT,
+  ): string {
     return JSON.stringify(
       {
         keyPoints: [
           {
-            text: "Validated handoffs preserve provenance.",
+            text,
             citedClaimIds,
           },
         ],
