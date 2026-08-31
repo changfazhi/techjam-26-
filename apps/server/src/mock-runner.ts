@@ -135,7 +135,10 @@ export class MockRunner implements AgentRunner {
       };
     }
 
-    if (this.config.misbehaviour === "WRONG_CITATION") {
+    if (
+      this.config.misbehaviour === "WRONG_CITATION" &&
+      this.shouldReturnWrongCitation(request)
+    ) {
       return {
         status: "SUCCESS",
         artifact: this.summaryArtifact(["claim-99"]),
@@ -278,5 +281,19 @@ export class MockRunner implements AgentRunner {
   private normaliseOutputPath(candidate: string): string | null {
     const outputPath = candidate.trim().replace(/[.,;:!?]+$/, "");
     return /\.(?:json|md)$/i.test(outputPath) ? outputPath : null;
+  }
+
+  /**
+   * Corrupt only the summary's initial output. Coordinator retries include a
+   * rejection section, which is the available per-session attempt signal.
+   * Keep the no-request overload's focused-misbehaviour contract unchanged.
+   */
+  private shouldReturnWrongCitation(request?: RunnerRequest): boolean {
+    if (!request) return true;
+
+    return (
+      this.outputPath(request.prompt)?.endsWith("summary.json") === true &&
+      !request.prompt.includes("## Previous attempt was rejected")
+    );
   }
 }
