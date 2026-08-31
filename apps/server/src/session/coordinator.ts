@@ -33,6 +33,20 @@ const DEFAULT_POLL_INTERVAL_MS = 500;
  * forever; tests inject their own value and are unaffected.
  */
 const DEFAULT_STAGE_TIMEOUT_MS = 300_000;
+/**
+ * Pause before re-dispatching a held stage, doubled per attempt.
+ *
+ * Retries used to fire with no gap at all: a real run against Ark returned 429
+ * Too Many Requests, the second attempt went out 1 ms later, drew the same 429,
+ * and the whole session was dead in 1.5 seconds. A transient upstream fault
+ * must not be able to burn the entire retry budget faster than the API can
+ * recover. This does not apply to a schema rejection needing no wait — but the
+ * coordinator cannot tell the two apart, and waiting two seconds on a genuine
+ * violation costs nothing next to failing a demo.
+ */
+const DEFAULT_RETRY_BACKOFF_MS = 2_000;
+/** How often the backoff wakes to notice a stop(). */
+const BACKOFF_POLL_MS = 100;
 
 export interface CoordinatorDeps {
   agents: AgentService;
@@ -42,8 +56,13 @@ export interface CoordinatorDeps {
   workspacePathFor(agentId: string): string;
   /** How often to poll getRun while a stage is in flight. Default 500. */
   pollIntervalMs?: number | undefined;
-  /** Deadline for one stage attempt before cancel + hold. Default 90_000. */
+  /** Deadline for one stage attempt before cancel + hold. Default 300_000. */
   stageTimeoutMs?: number | undefined;
+  /**
+   * Pause before re-dispatching a held stage, doubled per attempt. Default
+   * 2_000. Set 0 to retry immediately, which is what the tests do.
+   */
+  retryBackoffMs?: number | undefined;
   /**
    * Prompt assembly. Defaults to W4's buildStagePrompt; injectable so the
    * coordinator and its tests do not depend on W4's implementation landing first.
@@ -153,6 +172,12 @@ export class SessionCoordinator {
           break;
         }
         violations = result.violations;
+
+        // Give a struggling upstream room to recover before spending the next
+        // attempt. Skipped after the final one, which has nothing to wait for.
+        if (attempt < stage.maxAttempts) {
+          await this.backoff(sessionId, attempt);
+        }
       }
 
       if (this.stopRequests.has(sessionId)) return;
@@ -307,6 +332,24 @@ export class SessionCoordinator {
       this.deps.workspacePathFor(nextStage.agentId),
       nextStage.inputFileName,
     );
+  }
+
+  /**
+   * Waits before the next attempt on a held stage, doubling per attempt.
+   *
+   * Wakes every BACKOFF_POLL_MS so a stop() lands promptly instead of sitting
+   * out the whole pause — a session being cancelled must not appear hung.
+   */
+  private async backoff(sessionId: string, attempt: number): Promise<void> {
+    const base = this.deps.retryBackoffMs ?? DEFAULT_RETRY_BACKOFF_MS;
+    if (base <= 0) return;
+
+    const totalMs = base * Math.pow(2, attempt - 1);
+    for (let waited = 0; waited < totalMs; waited += BACKOFF_POLL_MS) {
+      if (this.stopRequests.has(sessionId)) return;
+      const remaining = Math.min(BACKOFF_POLL_MS, totalMs - waited);
+      await new Promise((resolve) => setTimeout(resolve, remaining));
+    }
   }
 
   /**
